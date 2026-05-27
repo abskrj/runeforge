@@ -196,16 +196,73 @@ snippet_environments.canary_pct
 
 ---
 
-## Phase 8 — Hardening & Advanced Features
+## Phase 8 — Tenant Admin Dashboard & White-Label
+
+**Goal:** Give each tenant org a self-serve admin dashboard to manage their Runeforge account, configure white-label branding for the embedded dashboard, and govern their engineers' access.
+
+### Scope
+- **Tenant admin portal** — separate React app at `admin.runeforge.io`; accessible to users with the `admin` API scope
+- **White-label branding config** — org admins set logo URL, accent colour, font family, and custom domain from a UI; stored per-tenant in DB; fetched by the embed app on load; URL params remain as overrides
+- **Custom domain for embed** — org configures `snippets.acme.com` → points to `embed.runeforge.io` via CNAME; TLS via Let's Encrypt / cert-manager
+- **API key management UI** — create, revoke, and scope API keys; view last-used timestamps; copy key on creation (never shown again)
+- **Team member management** — invite engineers by email; assign `invoke / manage / admin` roles; revoke access
+- **Usage dashboard** — invocation counts, GB-seconds consumed, error rates — per snippet and per time window; powered by Phase 5 ClickHouse metrics
+- **Egress policy editor** — visual UI to add/remove blocked CIDRs and domains instead of raw JSON via API
+
+### New data model
+```sql
+-- Branding config (extends existing egress_policy pattern on tenants)
+ALTER TABLE tenants ADD COLUMN branding JSONB NOT NULL DEFAULT '{}';
+-- { logo_url, accent_color, font_family, custom_domain, hide_branding }
+
+-- Team members / user accounts
+CREATE TABLE users (
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    email TEXT NOT NULL UNIQUE,
+    password_hash TEXT,           -- null if OAuth-only
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE tenant_members (
+    tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role TEXT NOT NULL DEFAULT 'manage' CHECK (role IN ('invoke', 'manage', 'admin')),
+    invited_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, user_id)
+);
+```
+
+### New API surface
+```
+GET  /v1/tenants/{slug}/branding              → get branding config
+PUT  /v1/tenants/{slug}/branding              → update branding (admin scope)
+
+GET  /v1/tenants/{slug}/members               → list team members
+POST /v1/tenants/{slug}/members/invite        → invite by email
+DELETE /v1/tenants/{slug}/members/{userID}    → revoke access
+
+GET  /v1/tenants/{slug}/usage                 → usage summary (from ClickHouse)
+```
+
+### New services
+- `apps/admin/` — Vite + React, deployed to `admin.runeforge.io`
+- Reuses `packages/ui` components from Phase 4 (MetricsBadge, API key management UI)
+
+### Relationship to Phase 7 embed
+Phase 7 builds the embed app and accepts branding config as URL params. Phase 8 adds the admin UI where orgs configure that branding through a proper form — the embed app simply fetches it from `GET /v1/tenants/{slug}/branding` on load instead of relying on URL params alone. No changes to the embed app itself.
+
+---
+
+## Phase 9 — Hardening & Advanced Features
 
 **Goal:** Production-grade security hardening, full schema-driven API docs, and enterprise auth.
 
 ### Scope
 - **Firecracker executor plugin** — pluggable `Executor` interface implementation using AWS Firecracker microVMs; VM-boundary isolation; snapshot/restore for sub-50ms warm starts; requires KVM (bare metal or metal EC2 instances)
 - **OpenAPI spec generation** — at publish time, extract Zod / Pydantic schemas and emit a full OpenAPI 3.1 spec for the snippet's invoke endpoint; expose at `GET /v1/snippets/{id}/openapi.json`
-- **JWT auth** — RS256 JWTs as an alternative to API keys; short-lived (15min) + refresh tokens; intended for Web IDE sessions and user-facing callers
+- **JWT auth** — RS256 JWTs as an alternative to API keys; short-lived (15min) + refresh tokens; intended for Web IDE sessions and user-facing callers; also enables Phase 8 team member login without API keys
 - **Seccomp profiles** — production-grade syscall allowlist for the ProcessExecutor; block `ptrace`, `mount`, `clone(CLONE_NEWUSER)`, `perf_event_open`, etc.
-- **Audit log** — append-only log of all management actions (publish, secret create, egress change) per tenant; queryable by admin
+- **Audit log** — append-only log of all management actions (publish, secret create, egress change, member invite) per tenant; queryable by admin
 
 ---
 
@@ -216,8 +273,9 @@ snippet_environments.canary_pct
 | 1 | Core Runtime | Sync invocation, API keys, Postgres, docker-compose |
 | 2 | Scale | Async + streaming, Redis queue, warm pool |
 | 3 | Safety | Staging, canary, secrets, egress policy |
-| 4 | DX | Web IDE, CLI, git push-to-deploy |
-| 5 | Visibility | Logs, metrics, replay, multi-tenant K8s |
-| 6 | AI Integration | MCP server (Cursor / Claude Code) |
-| 7 | Embedding | iframe dashboard, embed tokens, white-label |
-| 8 | Hardening | Firecracker, OpenAPI gen, JWT, seccomp, audit log |
+| 4 | DX | Web IDE (Monaco + test runner + log streaming), CLI, git push-to-deploy |
+| 5 | Visibility | Logs, metrics, replay, multi-tenant K8s namespaces |
+| 6 | AI Integration | MCP server (Cursor / Claude Code integration) |
+| 7 | Embedding | iframe embed dashboard, embed tokens, read-only snippet viewer |
+| 8 | Tenant Admin | Admin portal, white-label branding config, team management, usage dashboard |
+| 9 | Hardening | Firecracker, OpenAPI gen, JWT, seccomp profiles, audit log |
