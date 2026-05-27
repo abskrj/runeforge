@@ -12,6 +12,7 @@ import (
 	"github.com/runeforge/control-plane/internal/api"
 	"github.com/runeforge/control-plane/internal/config"
 	"github.com/runeforge/control-plane/internal/executor/remote"
+	"github.com/runeforge/control-plane/internal/observability"
 	"github.com/runeforge/control-plane/internal/scheduler"
 	"github.com/runeforge/control-plane/internal/store/postgres"
 	redisstore "github.com/runeforge/control-plane/internal/store/redis"
@@ -59,6 +60,7 @@ func main() {
 	// --- Redis (optional — if unreachable we fall back to sync-only mode) ---
 	var redisClient *redisstore.Client
 	var sched *scheduler.Scheduler
+	observer := observability.NewPipelineObserver(nil, nil, nil)
 
 	rc, err := redisstore.New(cfg.RedisURL)
 	if err != nil {
@@ -72,10 +74,12 @@ func main() {
 		log.Info("redis connected", zap.String("redis_url", cfg.RedisURL))
 		sched = scheduler.NewWithQueue(store, exec, redisClient, encKey)
 	}
+	sched.SetObserver(observer)
 
 	// --- Background worker (only if Redis is available) ---
 	if redisClient != nil {
 		w := worker.New(redisClient, store, exec, log, cfg.WorkerCount)
+		w.SetObserver(observer)
 		go w.Run(ctx)
 		log.Info("background worker started", zap.Int("workers", cfg.WorkerCount))
 	}

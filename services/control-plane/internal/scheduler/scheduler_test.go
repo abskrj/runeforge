@@ -24,7 +24,7 @@ type mockStore struct {
 	getVersionByNumber       func(ctx context.Context, snippetID string, num int) (*models.SnippetVersion, error)
 	createInvocation         func(ctx context.Context, snippetID, versionID, env, tenantID, input string) (*models.Invocation, error)
 	createInvocationWithMode func(ctx context.Context, snippetID, versionID, environment, tenantID, inputPayload, invokeMode, callbackURL string, status models.InvocationStatus) (*models.Invocation, error)
-	updateInvocationResult   func(ctx context.Context, id string, status models.InvocationStatus, output, errMsg, stderr string, durationMs, peakMemoryMB int) error
+	updateInvocationResult   func(ctx context.Context, id string, status models.InvocationStatus, output, errMsg, stderr string, durationMs, peakMemoryMB, cpuMs int) error
 	getInvocation            func(ctx context.Context, id string) (*models.Invocation, error)
 	getSecretsForInvocation  func(ctx context.Context, tenantID, snippetID, env string, encKey []byte) (map[string]string, error)
 	getTenantByID            func(ctx context.Context, id string) (*models.Tenant, error)
@@ -55,8 +55,8 @@ func (m *mockStore) CreateInvocationWithMode(ctx context.Context, snippetID, ver
 	// Fall back to createInvocation for backward compatibility in existing tests.
 	return m.createInvocation(ctx, snippetID, versionID, environment, tenantID, inputPayload)
 }
-func (m *mockStore) UpdateInvocationResult(ctx context.Context, id string, status models.InvocationStatus, output, errMsg, stderr string, durationMs, peakMemoryMB int) error {
-	return m.updateInvocationResult(ctx, id, status, output, errMsg, stderr, durationMs, peakMemoryMB)
+func (m *mockStore) UpdateInvocationResult(ctx context.Context, id string, status models.InvocationStatus, output, errMsg, stderr string, durationMs, peakMemoryMB, cpuMs int) error {
+	return m.updateInvocationResult(ctx, id, status, output, errMsg, stderr, durationMs, peakMemoryMB, cpuMs)
 }
 func (m *mockStore) GetInvocation(ctx context.Context, id string) (*models.Invocation, error) {
 	return m.getInvocation(ctx, id)
@@ -183,7 +183,7 @@ func buildDefaultStore(invocationID, versionID string, activeVersion *string) *m
 			inv.CallbackURL = callbackURL
 			return inv, nil
 		},
-		updateInvocationResult: func(ctx context.Context, id string, status models.InvocationStatus, output, errMsg, stderr string, durationMs, peakMemoryMB int) error {
+		updateInvocationResult: func(ctx context.Context, id string, status models.InvocationStatus, output, errMsg, stderr string, durationMs, peakMemoryMB, cpuMs int) error {
 			return nil
 		},
 		getInvocation: func(ctx context.Context, id string) (*models.Invocation, error) {
@@ -281,7 +281,7 @@ func TestScheduler_Invoke_ExecutorTimeout(t *testing.T) {
 
 	var capturedStatus models.InvocationStatus
 	store := buildDefaultStore(invocationID, versionID, &activeVersion)
-	store.updateInvocationResult = func(ctx context.Context, id string, status models.InvocationStatus, output, errMsg, stderr string, durationMs, peakMemoryMB int) error {
+	store.updateInvocationResult = func(ctx context.Context, id string, status models.InvocationStatus, output, errMsg, stderr string, durationMs, peakMemoryMB, cpuMs int) error {
 		capturedStatus = status
 		return nil
 	}
@@ -320,7 +320,7 @@ func TestScheduler_Invoke_ExecutorOOM(t *testing.T) {
 
 	var capturedStatus models.InvocationStatus
 	store := buildDefaultStore(invocationID, versionID, &activeVersion)
-	store.updateInvocationResult = func(ctx context.Context, id string, status models.InvocationStatus, output, errMsg, stderr string, durationMs, peakMemoryMB int) error {
+	store.updateInvocationResult = func(ctx context.Context, id string, status models.InvocationStatus, output, errMsg, stderr string, durationMs, peakMemoryMB, cpuMs int) error {
 		capturedStatus = status
 		return nil
 	}

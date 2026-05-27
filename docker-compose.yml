@@ -28,6 +28,26 @@ services:
       timeout: 5s
       retries: 10
 
+  clickhouse:
+    image: clickhouse/clickhouse-server:24
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9001:9001"
+      - "9002:9000"
+    volumes:
+      - minio_data:/data
+    restart: unless-stopped
+
   bun-executor:
     build:
       context: ./services/executor-runtime/bun
@@ -55,16 +75,47 @@ services:
       REDIS_URL: redis:6379
       WORKER_COUNT: "5"
       ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000001"
+      CLICKHOUSE_DSN: http://clickhouse:8123
+      LOGS_BUCKET: runeforge-logs
+      REPLAY_BUCKET: runeforge-replays
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      clickhouse:
+        condition: service_started
+      minio:
+        condition: service_started
       bun-executor:
         condition: service_started
       python-executor:
         condition: service_started
     restart: unless-stopped
 
+  mcp-server:
+    build:
+      context: ./services/mcp-server
+    ports:
+      - "8090:8090"
+    environment:
+      CONTROL_PLANE_URL: http://control-plane:8080
+      PORT: "8090"
+    depends_on:
+      control-plane:
+        condition: service_started
+    restart: unless-stopped
+
+  embed-dashboard:
+    build:
+      context: ./apps/embed-dashboard
+    ports:
+      - "8091:80"
+    depends_on:
+      control-plane:
+        condition: service_started
+    restart: unless-stopped
+
 volumes:
   postgres_data:
+  minio_data:

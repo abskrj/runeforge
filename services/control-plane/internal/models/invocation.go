@@ -23,11 +23,15 @@ type Invocation struct {
 	TenantID     string           `json:"tenant_id"`
 	Status       InvocationStatus `json:"status"`
 	InputPayload string           `json:"input_payload"` // raw JSON
-	Output       string           `json:"output"`        // raw JSON
+	InputRef     string           `json:"input_ref,omitempty"`
+	Output       string           `json:"output"` // raw JSON
+	OutputRef    string           `json:"output_ref,omitempty"`
 	Error        string           `json:"error,omitempty"`
 	Stderr       string           `json:"stderr,omitempty"`
+	StderrRef    string           `json:"stderr_ref,omitempty"`
 	DurationMs   int              `json:"duration_ms"`
 	PeakMemoryMB int              `json:"peak_memory_mb"`
+	CPUMs        int              `json:"cpu_ms"`
 	CreatedAt    time.Time        `json:"created_at"`
 	CompletedAt  *time.Time       `json:"completed_at,omitempty"`
 	CallbackURL  string           `json:"callback_url,omitempty"`

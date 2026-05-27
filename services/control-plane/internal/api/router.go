@@ -29,6 +29,10 @@ func NewRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 	secretsH := handlers.NewSecretsHandler(store, log, encKey)
 	gitIntH := handlers.NewGitIntegrationHandler(store, log)
 	webhookH := handlers.NewWebhookHandler(store, sched, log)
+	logsH := handlers.NewLogsHandler(store, log)
+	metricsH := handlers.NewMetricsHandler(store, log)
+	replayH := handlers.NewReplayHandler(store, sched, log)
+	embedH := handlers.NewEmbedHandler(store, log)
 
 	// Health check — no auth.
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -94,6 +98,18 @@ func NewRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 
 		// Invocation detail lookup.
 		r.Get("/v1/invocations/{id}", invocationsH.GetInvocation)
+
+		// Observability endpoints.
+		r.Get("/v1/logs/snippets/{snippetID}", logsH.GetSnippetLogs)
+		r.Get("/v1/metrics/snippets/{snippetID}", metricsH.GetSnippetMetrics)
+		r.With(middleware.RequireScope("manage", log)).
+			Post("/v1/invocations/{id}/replay", replayH.ReplayInvocation)
+
+		// Embed token management.
+		r.With(middleware.RequireScope("manage", log)).
+			Post("/v1/embed/tokens", embedH.CreateToken)
+		r.With(middleware.RequireScope("manage", log)).
+			Delete("/v1/embed/tokens/{tokenID}", embedH.RevokeToken)
 	})
 
 	// The invoke endpoint performs its own auth inline (see handler comment).
@@ -103,6 +119,16 @@ func NewRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 
 	// Git webhook endpoint — no auth middleware; HMAC signature is verified inline.
 	r.Post("/v1/webhooks/git/{snippetID}", webhookH.GitWebhook)
+
+	// Embed read routes authenticated by opaque embed token.
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.AuthEmbed(store, log))
+		r.Get("/v1/embed/bootstrap", embedH.Bootstrap)
+		r.Get("/v1/embed/snippets", embedH.ListSnippets)
+		r.Get("/v1/embed/snippets/{snippetID}", embedH.GetSnippet)
+		r.Get("/v1/embed/snippets/{snippetID}/metrics", embedH.GetSnippetMetrics)
+		r.Get("/v1/embed/snippets/{snippetID}/logs", embedH.GetSnippetLogs)
+	})
 
 	return r
 }

@@ -1097,3 +1097,134 @@ func TestUpdateEgressPolicy(t *testing.T) {
 		t.Errorf("persisted blocked_cidrs = %v; want [192.168.1.0/24]", cidrs2)
 	}
 }
+
+// --- Phase 5: logs, metrics, replay ---
+
+func TestGetSnippetLogs(t *testing.T) {
+	env := setup(t)
+	snippetID := createTestSnippet(t, env)
+
+	// Create invocation entries so logs endpoint has data.
+	vRec := env.do(t, http.MethodPost, "/v1/snippets/"+snippetID+"/versions", env.manageKey, map[string]any{
+		"code": "export async function handler() { return {ok:true} }",
+	})
+	vNum := int(decodeJSON(t, vRec)["version_number"].(float64))
+	env.do(t, http.MethodPost, fmt.Sprintf("/v1/snippets/%s/versions/%d/publish?env=prod", snippetID, vNum), env.manageKey, nil)
+	snippet := env.do(t, http.MethodGet, "/v1/snippets/"+snippetID, env.manageKey, nil)
+	slug := decodeJSON(t, snippet)["slug"].(string)
+	invokePath := fmt.Sprintf("/v1/invoke/%s/%s?env=prod", env.tenant.Slug, slug)
+	req := httptest.NewRequest(http.MethodPost, invokePath, strings.NewReader(`{"a":1}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+env.invokeKey)
+	recInvoke := httptest.NewRecorder()
+	env.router.ServeHTTP(recInvoke, req)
+	if recInvoke.Code != http.StatusOK {
+		t.Fatalf("invoke status = %d; want 200\nbody: %s", recInvoke.Code, recInvoke.Body.String())
+	}
+
+	rec := env.do(t, http.MethodGet, "/v1/logs/snippets/"+snippetID+"?limit=10&env=prod", env.manageKey, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; want 200\nbody: %s", rec.Code, rec.Body.String())
+	}
+	body := decodeJSON(t, rec)
+	items, ok := body["items"].([]any)
+	if !ok {
+		t.Fatalf("items missing or invalid type: %#v", body["items"])
+	}
+	if len(items) == 0 {
+		t.Fatal("expected at least one log item")
+	}
+}
+
+func TestGetSnippetMetrics(t *testing.T) {
+	env := setup(t)
+	snippetID := createTestSnippet(t, env)
+
+	// Create invocation data.
+	vRec := env.do(t, http.MethodPost, "/v1/snippets/"+snippetID+"/versions", env.manageKey, map[string]any{
+		"code": "export async function handler() { return {ok:true} }",
+	})
+	vNum := int(decodeJSON(t, vRec)["version_number"].(float64))
+	env.do(t, http.MethodPost, fmt.Sprintf("/v1/snippets/%s/versions/%d/publish?env=prod", snippetID, vNum), env.manageKey, nil)
+	snippet := env.do(t, http.MethodGet, "/v1/snippets/"+snippetID, env.manageKey, nil)
+	slug := decodeJSON(t, snippet)["slug"].(string)
+	invokePath := fmt.Sprintf("/v1/invoke/%s/%s?env=prod", env.tenant.Slug, slug)
+	req := httptest.NewRequest(http.MethodPost, invokePath, strings.NewReader(`{"a":1}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+env.invokeKey)
+	recInvoke := httptest.NewRecorder()
+	env.router.ServeHTTP(recInvoke, req)
+	if recInvoke.Code != http.StatusOK {
+		t.Fatalf("invoke status = %d; want 200\nbody: %s", recInvoke.Code, recInvoke.Body.String())
+	}
+
+	rec := env.do(t, http.MethodGet, "/v1/metrics/snippets/"+snippetID+"?window=24h", env.manageKey, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; want 200\nbody: %s", rec.Code, rec.Body.String())
+	}
+	body := decodeJSON(t, rec)
+	if body["aggregates"] == nil {
+		t.Fatal("aggregates must be present")
+	}
+}
+
+func TestReplayInvocation(t *testing.T) {
+	env := setup(t)
+	tenantSlug, snippetSlug := publishSnippetForInvoke(t, env)
+
+	// Create an invocation so replay route can resolve the ID.
+	path := fmt.Sprintf("/v1/invoke/%s/%s", tenantSlug, snippetSlug)
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+env.invokeKey)
+	recInvoke := httptest.NewRecorder()
+	env.router.ServeHTTP(recInvoke, req)
+	if recInvoke.Code != http.StatusOK {
+		t.Fatalf("invoke status = %d; want 200\nbody: %s", recInvoke.Code, recInvoke.Body.String())
+	}
+	invocationID := recInvoke.Header().Get("X-Invocation-Id")
+	if invocationID == "" {
+		t.Fatal("X-Invocation-Id header not set")
+	}
+
+	_, err := env.store.UpdateReplayEnabled(context.Background(), env.tenant.ID, true)
+	if err != nil {
+		t.Fatalf("enable replay: %v", err)
+	}
+
+	rec := env.do(t, http.MethodPost, "/v1/invocations/"+invocationID+"/replay", env.manageKey, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; want 200\nbody: %s", rec.Code, rec.Body.String())
+	}
+	body := decodeJSON(t, rec)
+	if body["replay_invocation_id"] == "" {
+		t.Fatal("replay_invocation_id must be set")
+	}
+}
+
+func TestReplayInvocation_RequiresManageScope(t *testing.T) {
+	env := setup(t)
+	tenantSlug, snippetSlug := publishSnippetForInvoke(t, env)
+
+	path := fmt.Sprintf("/v1/invoke/%s/%s", tenantSlug, snippetSlug)
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+env.invokeKey)
+	recInvoke := httptest.NewRecorder()
+	env.router.ServeHTTP(recInvoke, req)
+	invocationID := recInvoke.Header().Get("X-Invocation-Id")
+	if invocationID == "" {
+		t.Fatal("X-Invocation-Id header not set")
+	}
+
+	_, err := env.store.UpdateReplayEnabled(context.Background(), env.tenant.ID, true)
+	if err != nil {
+		t.Fatalf("enable replay: %v", err)
+	}
+
+	// invoke-only key should be rejected by manage-scope middleware.
+	rec := env.do(t, http.MethodPost, "/v1/invocations/"+invocationID+"/replay", env.invokeKey, nil)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d; want 403\nbody: %s", rec.Code, rec.Body.String())
+	}
+}

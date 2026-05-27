@@ -7,6 +7,7 @@ import (
 
 	"github.com/runeforge/control-plane/internal/executor"
 	"github.com/runeforge/control-plane/internal/models"
+	"github.com/runeforge/control-plane/internal/observability"
 	redisstore "github.com/runeforge/control-plane/internal/store/redis"
 )
 
@@ -19,7 +20,7 @@ type Store interface {
 	GetVersionByNumber(ctx context.Context, snippetID string, num int) (*models.SnippetVersion, error)
 	CreateInvocation(ctx context.Context, snippetID, versionID, env, tenantID, input string) (*models.Invocation, error)
 	CreateInvocationWithMode(ctx context.Context, snippetID, versionID, environment, tenantID, inputPayload, invokeMode, callbackURL string, status models.InvocationStatus) (*models.Invocation, error)
-	UpdateInvocationResult(ctx context.Context, id string, status models.InvocationStatus, output, errMsg, stderr string, durationMs, peakMemoryMB int) error
+	UpdateInvocationResult(ctx context.Context, id string, status models.InvocationStatus, output, errMsg, stderr string, durationMs, peakMemoryMB, cpuMs int) error
 	GetInvocation(ctx context.Context, id string) (*models.Invocation, error)
 	GetSecretsForInvocation(ctx context.Context, tenantID, snippetID, env string, encKey []byte) (map[string]string, error)
 	GetTenantByID(ctx context.Context, id string) (*models.Tenant, error)
@@ -45,16 +46,37 @@ type Scheduler struct {
 	executor executor.Executor
 	queue    Queue  // nil in sync-only mode
 	encKey   []byte // for secret decryption
+	observer observability.InvocationObserver
 }
 
 // New creates a Scheduler wired to the given store and executor (sync only, no queue).
 func New(store Store, exec executor.Executor, encKey []byte) *Scheduler {
-	return &Scheduler{store: store, executor: exec, encKey: encKey}
+	return &Scheduler{
+		store:    store,
+		executor: exec,
+		encKey:   encKey,
+		observer: observability.NoopObserver{},
+	}
 }
 
 // NewWithQueue creates a Scheduler with an async job queue.
 func NewWithQueue(store Store, exec executor.Executor, q Queue, encKey []byte) *Scheduler {
-	return &Scheduler{store: store, executor: exec, queue: q, encKey: encKey}
+	return &Scheduler{
+		store:    store,
+		executor: exec,
+		queue:    q,
+		encKey:   encKey,
+		observer: observability.NoopObserver{},
+	}
+}
+
+// SetObserver injects a post-invocation observer for observability pipelines.
+func (s *Scheduler) SetObserver(observer observability.InvocationObserver) {
+	if observer == nil {
+		s.observer = observability.NoopObserver{}
+		return
+	}
+	s.observer = observer
 }
 
 // resolveVersion resolves the snippet and version for a request.
@@ -183,6 +205,7 @@ func (s *Scheduler) Invoke(ctx context.Context, req InvokeRequest) (*models.Invo
 		result.Stderr,
 		result.DurationMs,
 		result.PeakMemoryMB,
+		0,
 	)
 	if updateErr != nil {
 		_ = updateErr
@@ -196,8 +219,11 @@ func (s *Scheduler) Invoke(ctx context.Context, req InvokeRequest) (*models.Invo
 		invocation.Stderr = result.Stderr
 		invocation.DurationMs = result.DurationMs
 		invocation.PeakMemoryMB = result.PeakMemoryMB
+		invocation.CPUMs = 0
+		_ = s.observer.OnInvocationCompleted(ctx, invocation)
 		return invocation, nil
 	}
+	_ = s.observer.OnInvocationCompleted(ctx, final)
 
 	return final, nil
 }

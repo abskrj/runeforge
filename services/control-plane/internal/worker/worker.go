@@ -10,6 +10,7 @@ import (
 
 	"github.com/runeforge/control-plane/internal/executor"
 	"github.com/runeforge/control-plane/internal/models"
+	"github.com/runeforge/control-plane/internal/observability"
 	redisstore "github.com/runeforge/control-plane/internal/store/redis"
 )
 
@@ -20,7 +21,7 @@ type Dequeuer interface {
 
 // WorkerStore is the DB operations the worker needs.
 type WorkerStore interface {
-	UpdateInvocationResult(ctx context.Context, id string, status models.InvocationStatus, output, errMsg, stderr string, durationMs, peakMemoryMB int) error
+	UpdateInvocationResult(ctx context.Context, id string, status models.InvocationStatus, output, errMsg, stderr string, durationMs, peakMemoryMB, cpuMs int) error
 }
 
 // Worker pulls jobs from the Redis queue and executes them concurrently.
@@ -31,6 +32,7 @@ type Worker struct {
 	webhook *WebhookClient
 	log     *zap.Logger
 	workers int // concurrency level
+	observe observability.InvocationObserver
 }
 
 // New creates a Worker. workers controls how many goroutines process jobs in
@@ -46,7 +48,17 @@ func New(queue Dequeuer, store WorkerStore, exec executor.Executor, log *zap.Log
 		webhook: newWebhookClient(log),
 		log:     log,
 		workers: workers,
+		observe: observability.NoopObserver{},
 	}
+}
+
+// SetObserver injects a post-invocation observer for observability pipelines.
+func (w *Worker) SetObserver(observer observability.InvocationObserver) {
+	if observer == nil {
+		w.observe = observability.NoopObserver{}
+		return
+	}
+	w.observe = observer
 }
 
 // Run starts w.workers goroutines, each blocking on Dequeue, and processes
@@ -124,12 +136,31 @@ func (w *Worker) process(ctx context.Context, workerID int, job *redisstore.Job)
 		result.Stderr,
 		result.DurationMs,
 		result.PeakMemoryMB,
+		0,
 	); err != nil {
 		w.log.Error("worker: persist result",
 			zap.String("invocation_id", job.InvocationID),
 			zap.Error(err),
 		)
 	}
+
+	_ = w.observe.OnInvocationCompleted(ctx, &models.Invocation{
+		ID:           job.InvocationID,
+		SnippetID:    job.SnippetID,
+		VersionID:    job.VersionID,
+		Environment:  job.Env,
+		TenantID:     job.TenantID,
+		Status:       status,
+		InputPayload: job.Input,
+		Output:       result.Output,
+		Error:        result.Error,
+		Stderr:       result.Stderr,
+		DurationMs:   result.DurationMs,
+		PeakMemoryMB: result.PeakMemoryMB,
+		CPUMs:        0,
+		CallbackURL:  job.CallbackURL,
+		InvokeMode:   "async",
+	})
 
 	if job.CallbackURL != "" {
 		w.webhook.Deliver(ctx, job.CallbackURL, WebhookPayload{

@@ -57,7 +57,7 @@ type capturedResult struct {
 
 func (m *mockWorkerStore) UpdateInvocationResult(
 	ctx context.Context, id string, status models.InvocationStatus,
-	output, errMsg, stderr string, durationMs, peakMemoryMB int,
+	output, errMsg, stderr string, durationMs, peakMemoryMB, cpuMs int,
 ) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

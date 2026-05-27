@@ -18,6 +18,9 @@ type Config struct {
 	RedisURL          string // default: "localhost:6379"
 	WorkerCount       int    // default: 5
 	EncryptionKey     string // hex-encoded 32-byte AES key; generated ephemerally if empty
+	ClickHouseDSN     string // optional Phase 5 metrics store DSN
+	LogsBucket        string // optional Phase 5 object storage bucket for logs
+	ReplayBucket      string // optional Phase 5 object storage bucket for replay payloads
 }
 
 // Load reads configuration from environment variables, falling back to sensible
@@ -38,6 +41,9 @@ func Load() Config {
 		RedisURL:          getEnv("REDIS_URL", "localhost:6379"),
 		WorkerCount:       workerCount,
 		EncryptionKey:     os.Getenv("ENCRYPTION_KEY"),
+		ClickHouseDSN:     os.Getenv("CLICKHOUSE_DSN"),
+		LogsBucket:        os.Getenv("LOGS_BUCKET"),
+		ReplayBucket:      os.Getenv("REPLAY_BUCKET"),
 	}
 }
 

@@ -11,7 +11,7 @@ import (
 // version to prod so it can be invoked. Returns the IDs needed for invocation tests.
 func setupInvocationFixtures(t *testing.T) (store interface {
 	CreateInvocation(ctx context.Context, snippetID, versionID, env, tenantID, input string) (*models.Invocation, error)
-	UpdateInvocationResult(ctx context.Context, id string, status models.InvocationStatus, output, errMsg, stderr string, durationMs, peakMemoryMB int) error
+	UpdateInvocationResult(ctx context.Context, id string, status models.InvocationStatus, output, errMsg, stderr string, durationMs, peakMemoryMB, cpuMs int) error
 	GetInvocation(ctx context.Context, id string) (*models.Invocation, error)
 	ListInvocationsBySnippet(ctx context.Context, snippetID string, limit int) ([]*models.Invocation, error)
 }, tenantID, snippetID, versionID string) {
@@ -56,7 +56,7 @@ func TestUpdateInvocationResult(t *testing.T) {
 	inv, _ := store.CreateInvocation(ctx, sn.ID, v.ID, "prod", tenant.ID, `{}`)
 
 	err := store.UpdateInvocationResult(ctx, inv.ID,
-		models.InvocationCompleted, `{"result":"ok"}`, "", "some stderr", 123, 45)
+		models.InvocationCompleted, `{"result":"ok"}`, "", "some stderr", 123, 45, 67)
 	if err != nil {
 		t.Fatalf("UpdateInvocationResult: %v", err)
 	}
@@ -81,6 +81,9 @@ func TestUpdateInvocationResult(t *testing.T) {
 	if fetched.PeakMemoryMB != 45 {
 		t.Errorf("peak_memory_mb = %d; want 45", fetched.PeakMemoryMB)
 	}
+	if fetched.CPUMs != 67 {
+		t.Errorf("cpu_ms = %d; want 67", fetched.CPUMs)
+	}
 	if fetched.CompletedAt == nil {
 		t.Error("completed_at must be set after update")
 	}
@@ -95,7 +98,7 @@ func TestUpdateInvocationResult_Timeout(t *testing.T) {
 	v, _ := store.CreateVersion(ctx, sn.ID, "code", "{}", "{}", "user-1", 1000, 64, 50)
 	inv, _ := store.CreateInvocation(ctx, sn.ID, v.ID, "prod", tenant.ID, `{}`)
 
-	_ = store.UpdateInvocationResult(ctx, inv.ID, models.InvocationTimeout, "", "timeout", "", 1000, 0)
+	_ = store.UpdateInvocationResult(ctx, inv.ID, models.InvocationTimeout, "", "timeout", "", 1000, 0, 0)
 
 	fetched, _ := store.GetInvocation(ctx, inv.ID)
 	if fetched.Status != models.InvocationTimeout {
