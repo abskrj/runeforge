@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -26,6 +27,11 @@ func NewInvocationsHandler(store *postgres.Store, sched *scheduler.Scheduler, lo
 	return &InvocationsHandler{store: store, scheduler: sched, log: log}
 }
 
+// invokeBody is the optional JSON body for invoke requests.
+type invokeBody struct {
+	CallbackURL string `json:"callback_url"`
+}
+
 // Invoke handles POST /v1/invoke/{tenantSlug}/{snippetSlug}.
 //
 // The invoke endpoint performs its own API key authentication inline rather
@@ -33,10 +39,16 @@ func NewInvocationsHandler(store *postgres.Store, sched *scheduler.Scheduler, lo
 // identified via the URL path, allowing external callers to use a key scoped
 // to a specific tenant without needing a separate header.
 //
-// Response headers:
+// Invoke mode is controlled by the X-Invoke-Mode header (default: sync):
+//
+//	sync   — execute immediately, return full result (200)
+//	async  — enqueue for background execution, return pending info (202)
+//	stream — stream execution output as text/event-stream
+//
+// Response headers (sync/stream):
 //
 //	X-Invocation-Id  — the persisted invocation ID
-//	X-Duration-Ms    — execution wall-clock time in milliseconds
+//	X-Duration-Ms    — execution wall-clock time in milliseconds (sync only)
 func (h *InvocationsHandler) Invoke(w http.ResponseWriter, r *http.Request) {
 	tenantSlug := chi.URLParam(r, "tenantSlug")
 	snippetSlug := chi.URLParam(r, "snippetSlug")
@@ -83,6 +95,14 @@ func (h *InvocationsHandler) Invoke(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "failed to read request body")
 		return
 	}
+
+	// Try to unmarshal as invokeBody to extract optional fields.
+	var ib invokeBody
+	if len(body) > 0 {
+		// Best-effort unmarshal — we'll still use the raw body as input payload.
+		_ = json.Unmarshal(body, &ib)
+	}
+
 	inputPayload := string(body)
 	if inputPayload == "" {
 		inputPayload = "{}"
@@ -104,25 +124,57 @@ func (h *InvocationsHandler) Invoke(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// --- Execute via scheduler ---
-	invocation, err := h.scheduler.Invoke(r.Context(), scheduler.InvokeRequest{
-		TenantID:    tenant.ID,
-		SnippetSlug: snippetSlug,
-		Env:         env,
-		Input:       inputPayload,
-	})
+	// --- Resolve pinned version from query param ---
+	var pinnedVersion int
+	if vStr := r.URL.Query().Get("version"); vStr != "" {
+		// Accept "v3" or "3".
+		vStr = strings.TrimPrefix(vStr, "v")
+		n, err := strconv.Atoi(vStr)
+		if err != nil || n <= 0 {
+			writeError(w, http.StatusBadRequest, "version must be a positive integer, e.g. ?version=3 or ?version=v3")
+			return
+		}
+		pinnedVersion = n
+	}
+
+	invokeReq := scheduler.InvokeRequest{
+		TenantID:      tenant.ID,
+		SnippetSlug:   snippetSlug,
+		Env:           env,
+		Input:         inputPayload,
+		PinnedVersion: pinnedVersion,
+	}
+
+	// --- Invoke mode ---
+	mode := strings.ToLower(r.Header.Get("X-Invoke-Mode"))
+	if mode == "" {
+		mode = "sync"
+	}
+
+	switch mode {
+	case "sync":
+		h.invokeSyncMode(w, r, invokeReq)
+	case "async":
+		h.invokeAsyncMode(w, r, invokeReq, ib.CallbackURL)
+	case "stream":
+		h.invokeStreamMode(w, r, invokeReq)
+	default:
+		writeError(w, http.StatusBadRequest, "X-Invoke-Mode must be 'sync', 'async', or 'stream'")
+	}
+}
+
+func (h *InvocationsHandler) invokeSyncMode(w http.ResponseWriter, r *http.Request, req scheduler.InvokeRequest) {
+	invocation, err := h.scheduler.Invoke(r.Context(), req)
 	if err != nil {
-		h.log.Error("invoke failed", zap.String("slug", snippetSlug), zap.Error(err))
+		h.log.Error("invoke failed", zap.String("slug", req.SnippetSlug), zap.Error(err))
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	// --- Set response headers ---
 	w.Header().Set("X-Invocation-Id", invocation.ID)
 	w.Header().Set("X-Duration-Ms", fmt.Sprintf("%d", invocation.DurationMs))
 
 	// Parse the output JSON so it embeds naturally in the response object.
-	// If it's not valid JSON, embed it as a string.
 	var outputVal any
 	if err := json.Unmarshal([]byte(invocation.Output), &outputVal); err != nil {
 		outputVal = invocation.Output
@@ -136,6 +188,65 @@ func (h *InvocationsHandler) Invoke(w http.ResponseWriter, r *http.Request) {
 		"error":         invocation.Error,
 		"stderr":        invocation.Stderr,
 	})
+}
+
+func (h *InvocationsHandler) invokeAsyncMode(w http.ResponseWriter, r *http.Request, req scheduler.InvokeRequest, callbackURL string) {
+	invocation, err := h.scheduler.InvokeAsync(r.Context(), req, callbackURL)
+	if err != nil {
+		h.log.Error("invoke async failed", zap.String("slug", req.SnippetSlug), zap.Error(err))
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"invocation_id": invocation.ID,
+		"status":        invocation.Status,
+		"status_url":    "/v1/invocations/" + invocation.ID,
+	})
+}
+
+func (h *InvocationsHandler) invokeStreamMode(w http.ResponseWriter, r *http.Request, req scheduler.InvokeRequest) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "streaming not supported by this server")
+		return
+	}
+
+	ch, invocation, err := h.scheduler.InvokeStream(r.Context(), req)
+	if err != nil {
+		h.log.Error("invoke stream failed", zap.String("slug", req.SnippetSlug), zap.Error(err))
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.Header().Set("X-Invocation-Id", invocation.ID)
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	for chunk := range ch {
+		data, err := json.Marshal(chunk)
+		if err != nil {
+			h.log.Error("stream: marshal chunk", zap.Error(err))
+			continue
+		}
+		_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
+		flusher.Flush()
+
+		if chunk.Done {
+			break
+		}
+	}
+
+	// Drain any remaining chunks in case we broke early.
+	for range ch {
+	}
+
+	// Final done event.
+	_, _ = fmt.Fprintf(w, "data: {\"done\":true}\n\n")
+	flusher.Flush()
 }
 
 // GetInvocation handles GET /v1/invocations/{id}.

@@ -21,7 +21,20 @@ type RunResult struct {
 	Error        string // "timeout" | "oom" | "" for other errors, or error message
 }
 
+// StreamChunk is one piece of output emitted by a streaming snippet.
+type StreamChunk struct {
+	Data  string // partial JSON or text emitted by the snippet
+	Error string // non-empty on error
+	Done  bool   // true on the final chunk
+}
+
 // Executor is the interface that all execution backends must satisfy.
 type Executor interface {
+	// Run executes a snippet synchronously and returns the full result.
 	Run(ctx context.Context, spec RunSpec) RunResult
+
+	// RunStream calls the executor's streaming endpoint and returns a channel
+	// of StreamChunks. The channel is closed when the stream ends or the
+	// context is cancelled. The caller must drain the channel.
+	RunStream(ctx context.Context, spec RunSpec) (<-chan StreamChunk, error)
 }

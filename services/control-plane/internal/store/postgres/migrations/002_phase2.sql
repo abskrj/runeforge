@@ -1,0 +1,2 @@
+ALTER TABLE invocations ADD COLUMN IF NOT EXISTS callback_url TEXT;
+ALTER TABLE invocations ADD COLUMN IF NOT EXISTS invoke_mode TEXT NOT NULL DEFAULT 'sync';

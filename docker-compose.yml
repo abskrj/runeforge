@@ -17,6 +17,17 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   bun-executor:
     build:
       context: ./services/executor-runtime/bun
@@ -41,8 +52,12 @@ services:
       BUN_EXECUTOR_URL: http://bun-executor:8080
       PYTHON_EXECUTOR_URL: http://python-executor:8080
       PORT: "8080"
+      REDIS_URL: redis:6379
+      WORKER_COUNT: "5"
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       bun-executor:
         condition: service_started

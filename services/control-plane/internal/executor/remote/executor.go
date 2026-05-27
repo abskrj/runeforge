@@ -1,12 +1,14 @@
 package remote
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/runeforge/control-plane/internal/executor"
@@ -105,6 +107,100 @@ func (e *RemoteExecutor) Run(ctx context.Context, spec executor.RunSpec) executo
 		ExitCode:     runResp.ExitCode,
 		Error:        runResp.Error,
 	}
+}
+
+// RunStream calls POST /run/stream on the executor container.
+// The executor returns text/event-stream. Each SSE "data:" line is a JSON
+// StreamChunk. The method returns a channel immediately; a goroutine reads the
+// SSE stream and sends chunks. The channel is closed when the stream ends or
+// the context is cancelled.
+func (e *RemoteExecutor) RunStream(ctx context.Context, spec executor.RunSpec) (<-chan executor.StreamChunk, error) {
+	endpoint, err := e.endpointFor(spec.Language)
+	if err != nil {
+		return nil, err
+	}
+
+	reqBody, err := json.Marshal(runRequest{
+		Code:        spec.Code,
+		Input:       spec.Input,
+		TimeoutMs:   spec.TimeoutMs,
+		MaxMemoryMB: spec.MaxMemoryMB,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("runstream marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"/run/stream", bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, fmt.Errorf("runstream build request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "text/event-stream")
+
+	resp, err := e.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("runstream http: %w", err)
+	}
+
+	if resp.StatusCode >= 500 {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return nil, fmt.Errorf("runstream executor returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	ch := make(chan executor.StreamChunk, 16)
+
+	go func() {
+		defer close(ch)
+		defer resp.Body.Close()
+
+		scanner := bufio.NewScanner(resp.Body)
+		for scanner.Scan() {
+			line := scanner.Text()
+
+			// Blank lines are SSE field separators — skip.
+			if line == "" {
+				continue
+			}
+
+			// SSE lines that carry data start with "data: ".
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+
+			payload := strings.TrimPrefix(line, "data: ")
+
+			var chunk executor.StreamChunk
+			if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
+				// Emit an error chunk and stop.
+				select {
+				case ch <- executor.StreamChunk{Error: fmt.Sprintf("unmarshal chunk: %v", err), Done: true}:
+				case <-ctx.Done():
+				}
+				return
+			}
+
+			select {
+			case ch <- chunk:
+			case <-ctx.Done():
+				return
+			}
+
+			if chunk.Done {
+				return
+			}
+		}
+
+		// Scanner finished (EOF or error).
+		if err := scanner.Err(); err != nil && ctx.Err() == nil {
+			select {
+			case ch <- executor.StreamChunk{Error: fmt.Sprintf("stream read error: %v", err), Done: true}:
+			default:
+			}
+		}
+	}()
+
+	return ch, nil
 }
 
 func (e *RemoteExecutor) endpointFor(language string) (string, error) {

@@ -3,6 +3,7 @@ package remote_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,7 +14,7 @@ import (
 )
 
 // mockExecutorServer starts an httptest server that responds with the given
-// runResponse JSON. Close the returned server after the test.
+// runResponse JSON on POST /run. Close the returned server after the test.
 func mockExecutorServer(t *testing.T, status int, resp any) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -188,5 +189,179 @@ func TestRemoteExecutor_Run_InvalidJSONResponse(t *testing.T) {
 
 	if result.Error == "" {
 		t.Error("expected error for invalid JSON response, got none")
+	}
+}
+
+// --- RunStream tests ---
+
+// mockStreamServer creates an httptest server that serves SSE events on
+// POST /run/stream.
+func mockStreamServer(t *testing.T, chunks []map[string]any) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/run/stream" || r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		flusher, _ := w.(http.Flusher)
+		for _, chunk := range chunks {
+			data, _ := json.Marshal(chunk)
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+	}))
+}
+
+func TestRemoteExecutor_RunStream_SingleChunk(t *testing.T) {
+	chunks := []map[string]any{
+		{"data": `{"result":"hello"}`, "done": true},
+	}
+	srv := mockStreamServer(t, chunks)
+	defer srv.Close()
+
+	exec := remote.New(srv.URL, "http://unused")
+	ch, err := exec.RunStream(context.Background(), executor.RunSpec{
+		Language:    "bun",
+		Code:        `export default async () => "hello"`,
+		Input:       `{}`,
+		TimeoutMs:   5000,
+		MaxMemoryMB: 128,
+	})
+
+	if err != nil {
+		t.Fatalf("RunStream error: %v", err)
+	}
+
+	var received []executor.StreamChunk
+	for chunk := range ch {
+		received = append(received, chunk)
+	}
+
+	if len(received) == 0 {
+		t.Fatal("expected at least one chunk, got none")
+	}
+	last := received[len(received)-1]
+	if !last.Done {
+		t.Error("last chunk should have Done=true")
+	}
+}
+
+func TestRemoteExecutor_RunStream_MultipleChunks(t *testing.T) {
+	chunks := []map[string]any{
+		{"data": "chunk1", "done": false},
+		{"data": "chunk2", "done": false},
+		{"data": "chunk3", "done": true},
+	}
+	srv := mockStreamServer(t, chunks)
+	defer srv.Close()
+
+	exec := remote.New(srv.URL, "http://unused")
+	ch, err := exec.RunStream(context.Background(), executor.RunSpec{
+		Language: "bun",
+		Input:    `{}`,
+	})
+	if err != nil {
+		t.Fatalf("RunStream error: %v", err)
+	}
+
+	var received []executor.StreamChunk
+	for chunk := range ch {
+		received = append(received, chunk)
+	}
+
+	if len(received) != 3 {
+		t.Errorf("got %d chunks; want 3", len(received))
+	}
+}
+
+func TestRemoteExecutor_RunStream_ContextCancel(t *testing.T) {
+	// Server that streams slowly; respects request context cancellation.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/run/stream" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		for i := 0; i < 100; i++ {
+			select {
+			case <-r.Context().Done():
+				return
+			default:
+			}
+			data, _ := json.Marshal(map[string]any{"data": fmt.Sprintf("chunk%d", i), "done": false})
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
+			if flusher != nil {
+				flusher.Flush()
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	exec := remote.New(srv.URL, "http://unused")
+	ch, err := exec.RunStream(ctx, executor.RunSpec{
+		Language: "bun",
+		Input:    `{}`,
+	})
+	if err != nil {
+		t.Fatalf("RunStream error: %v", err)
+	}
+
+	// Read one chunk then cancel.
+	select {
+	case <-ch:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for first chunk")
+	}
+	cancel()
+
+	// Drain the channel; it should close promptly after cancel.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range ch {
+		}
+	}()
+
+	select {
+	case <-done:
+		// Good — channel closed after cancel.
+	case <-time.After(3 * time.Second):
+		t.Error("channel did not close within 3s after context cancel")
+	}
+}
+
+func TestRemoteExecutor_RunStream_UnsupportedLanguage(t *testing.T) {
+	exec := remote.New("http://bun", "http://python")
+	_, err := exec.RunStream(context.Background(), executor.RunSpec{
+		Language: "ruby",
+		Input:    `{}`,
+	})
+	if err == nil {
+		t.Error("expected error for unsupported language, got nil")
+	}
+}
+
+func TestRemoteExecutor_RunStream_ServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"executor crashed"}`))
+	}))
+	defer srv.Close()
+
+	exec := remote.New(srv.URL, "http://unused")
+	_, err := exec.RunStream(context.Background(), executor.RunSpec{
+		Language: "bun",
+		Input:    `{}`,
+	})
+	if err == nil {
+		t.Error("expected error for 500 response, got nil")
 	}
 }

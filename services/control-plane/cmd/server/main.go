@@ -14,6 +14,8 @@ import (
 	"github.com/runeforge/control-plane/internal/executor/remote"
 	"github.com/runeforge/control-plane/internal/scheduler"
 	"github.com/runeforge/control-plane/internal/store/postgres"
+	redisstore "github.com/runeforge/control-plane/internal/store/redis"
+	"github.com/runeforge/control-plane/internal/worker"
 	"go.uber.org/zap"
 )
 
@@ -32,10 +34,15 @@ func main() {
 		zap.String("port", cfg.Port),
 		zap.String("bun_executor", cfg.BunExecutorURL),
 		zap.String("python_executor", cfg.PythonExecutorURL),
+		zap.String("redis_url", cfg.RedisURL),
+		zap.Int("worker_count", cfg.WorkerCount),
 	)
 
+	// --- Context (cancelled on shutdown signal) ---
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	// --- Postgres (with retry for docker-compose startup ordering) ---
-	ctx := context.Background()
 	store, err := connectWithRetry(ctx, cfg.DatabaseURL, log, 10, 2*time.Second)
 	if err != nil {
 		log.Fatal("failed to connect to postgres", zap.Error(err))
@@ -46,8 +53,29 @@ func main() {
 	// --- Executor ---
 	exec := remote.New(cfg.BunExecutorURL, cfg.PythonExecutorURL)
 
-	// --- Scheduler ---
-	sched := scheduler.New(store, exec)
+	// --- Redis (optional — if unreachable we fall back to sync-only mode) ---
+	var redisClient *redisstore.Client
+	var sched *scheduler.Scheduler
+
+	rc, err := redisstore.New(cfg.RedisURL)
+	if err != nil {
+		log.Warn("redis not available, running in sync-only mode (no async/queue)",
+			zap.String("redis_url", cfg.RedisURL),
+			zap.Error(err),
+		)
+		sched = scheduler.New(store, exec)
+	} else {
+		redisClient = rc
+		log.Info("redis connected", zap.String("redis_url", cfg.RedisURL))
+		sched = scheduler.NewWithQueue(store, exec, redisClient)
+	}
+
+	// --- Background worker (only if Redis is available) ---
+	if redisClient != nil {
+		w := worker.New(redisClient, store, exec, log, cfg.WorkerCount)
+		go w.Run(ctx)
+		log.Info("background worker started", zap.Int("workers", cfg.WorkerCount))
+	}
 
 	// --- Router ---
 	router := api.NewRouter(store, sched, log)
@@ -57,7 +85,7 @@ func main() {
 		Addr:         ":" + cfg.Port,
 		Handler:      router,
 		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 5 * time.Minute, // allow long invocations
+		WriteTimeout: 5 * time.Minute, // allow long invocations and streams
 		IdleTimeout:  120 * time.Second,
 	}
 
@@ -75,12 +103,22 @@ func main() {
 	<-quit
 	log.Info("shutting down...")
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	// Cancel ctx first so background workers stop pulling new jobs.
+	cancel()
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Error("graceful shutdown failed", zap.Error(err))
 	}
+
+	if redisClient != nil {
+		if err := redisClient.Close(); err != nil {
+			log.Warn("redis close", zap.Error(err))
+		}
+	}
+
 	log.Info("server stopped")
 }
 

@@ -30,4 +30,6 @@ type Invocation struct {
 	PeakMemoryMB int              `json:"peak_memory_mb"`
 	CreatedAt    time.Time        `json:"created_at"`
 	CompletedAt  *time.Time       `json:"completed_at,omitempty"`
+	CallbackURL  string           `json:"callback_url,omitempty"`
+	InvokeMode   string           `json:"invoke_mode"` // "sync" | "async" | "stream"
 }

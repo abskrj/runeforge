@@ -7,19 +7,32 @@ import (
 	"github.com/runeforge/control-plane/internal/models"
 )
 
-// CreateInvocation inserts a new invocation record with status=running.
+// CreateInvocation inserts a new invocation record.
+// The status defaults to 'running' for sync invocations; callers that want
+// 'pending' (async) should call CreateInvocationWithMode.
 func (s *Store) CreateInvocation(ctx context.Context, snippetID, versionID, environment, tenantID, inputPayload string) (*models.Invocation, error) {
+	return s.CreateInvocationWithMode(ctx, snippetID, versionID, environment, tenantID, inputPayload, "sync", "", models.InvocationRunning)
+}
+
+// CreateInvocationWithMode inserts a new invocation record with explicit mode,
+// callback URL, and initial status.
+func (s *Store) CreateInvocationWithMode(
+	ctx context.Context,
+	snippetID, versionID, environment, tenantID, inputPayload, invokeMode, callbackURL string,
+	status models.InvocationStatus,
+) (*models.Invocation, error) {
 	row := s.pool.QueryRow(ctx,
-		`INSERT INTO invocations (snippet_id, version_id, environment, tenant_id, status, input_payload)
-		 VALUES ($1, $2, $3, $4, 'running', $5)
+		`INSERT INTO invocations
+		   (snippet_id, version_id, environment, tenant_id, status, input_payload, invoke_mode, callback_url)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		 RETURNING id, snippet_id, version_id, environment, tenant_id, status,
 		           input_payload, output, error, stderr, duration_ms, peak_memory_mb,
-		           created_at, completed_at`,
-		snippetID, versionID, environment, tenantID, inputPayload,
+		           created_at, completed_at, callback_url, invoke_mode`,
+		snippetID, versionID, environment, tenantID, string(status), inputPayload, invokeMode, nullableString(callbackURL),
 	)
 	inv, err := scanInvocation(row)
 	if err != nil {
-		return nil, fmt.Errorf("CreateInvocation scan: %w", err)
+		return nil, fmt.Errorf("CreateInvocationWithMode scan: %w", err)
 	}
 	return inv, nil
 }
@@ -49,7 +62,7 @@ func (s *Store) GetInvocation(ctx context.Context, id string) (*models.Invocatio
 	row := s.pool.QueryRow(ctx,
 		`SELECT id, snippet_id, version_id, environment, tenant_id, status,
 		        input_payload, output, error, stderr, duration_ms, peak_memory_mb,
-		        created_at, completed_at
+		        created_at, completed_at, callback_url, invoke_mode
 		 FROM invocations WHERE id = $1`,
 		id,
 	)
@@ -65,7 +78,7 @@ func (s *Store) ListInvocationsBySnippet(ctx context.Context, snippetID string, 
 	rows, err := s.pool.Query(ctx,
 		`SELECT id, snippet_id, version_id, environment, tenant_id, status,
 		        input_payload, output, error, stderr, duration_ms, peak_memory_mb,
-		        created_at, completed_at
+		        created_at, completed_at, callback_url, invoke_mode
 		 FROM invocations WHERE snippet_id = $1
 		 ORDER BY created_at DESC LIMIT $2`,
 		snippetID, limit,
@@ -88,7 +101,7 @@ func (s *Store) ListInvocationsBySnippet(ctx context.Context, snippetID string, 
 
 func scanInvocation(s scannable) (*models.Invocation, error) {
 	var inv models.Invocation
-	var output, errMsg, stderr *string
+	var output, errMsg, stderr, callbackURL *string
 	var durationMs, peakMemoryMB *int
 	if err := s.Scan(
 		&inv.ID, &inv.SnippetID, &inv.VersionID, &inv.Environment, &inv.TenantID,
@@ -96,6 +109,7 @@ func scanInvocation(s scannable) (*models.Invocation, error) {
 		&output, &errMsg, &stderr,
 		&durationMs, &peakMemoryMB,
 		&inv.CreatedAt, &inv.CompletedAt,
+		&callbackURL, &inv.InvokeMode,
 	); err != nil {
 		return nil, err
 	}
@@ -114,5 +128,16 @@ func scanInvocation(s scannable) (*models.Invocation, error) {
 	if peakMemoryMB != nil {
 		inv.PeakMemoryMB = *peakMemoryMB
 	}
+	if callbackURL != nil {
+		inv.CallbackURL = *callbackURL
+	}
 	return &inv, nil
+}
+
+// nullableString converts an empty string to nil (SQL NULL).
+func nullableString(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }

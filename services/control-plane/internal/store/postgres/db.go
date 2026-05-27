@@ -9,7 +9,10 @@ import (
 )
 
 //go:embed migrations/001_initial.sql
-var migrationSQL string
+var migrationSQL1 string
+
+//go:embed migrations/002_phase2.sql
+var migrationSQL2 string
 
 // Store wraps a pgxpool.Pool and provides all database operations.
 type Store struct {
@@ -29,9 +32,11 @@ func New(ctx context.Context, dsn string) (*Store, error) {
 		return nil, fmt.Errorf("postgres ping: %w", err)
 	}
 
-	if _, err := pool.Exec(ctx, migrationSQL); err != nil {
-		pool.Close()
-		return nil, fmt.Errorf("running migrations: %w", err)
+	for i, sql := range []string{migrationSQL1, migrationSQL2} {
+		if _, err := pool.Exec(ctx, sql); err != nil {
+			pool.Close()
+			return nil, fmt.Errorf("running migration %d: %w", i+1, err)
+		}
 	}
 
 	return &Store{pool: pool}, nil

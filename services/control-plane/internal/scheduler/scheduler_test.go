@@ -9,6 +9,7 @@ import (
 	"github.com/runeforge/control-plane/internal/executor"
 	"github.com/runeforge/control-plane/internal/models"
 	"github.com/runeforge/control-plane/internal/scheduler"
+	redisstore "github.com/runeforge/control-plane/internal/store/redis"
 )
 
 // --- Mocks ---
@@ -17,7 +18,9 @@ type mockStore struct {
 	getSnippetBySlug       func(ctx context.Context, tenantID, slug string) (*models.Snippet, error)
 	getSnippetEnvironment  func(ctx context.Context, snippetID, env string) (*models.SnippetEnvironment, error)
 	getVersion             func(ctx context.Context, id string) (*models.SnippetVersion, error)
+	getVersionByNumber     func(ctx context.Context, snippetID string, num int) (*models.SnippetVersion, error)
 	createInvocation       func(ctx context.Context, snippetID, versionID, env, tenantID, input string) (*models.Invocation, error)
+	createInvocationWithMode func(ctx context.Context, snippetID, versionID, environment, tenantID, inputPayload, invokeMode, callbackURL string, status models.InvocationStatus) (*models.Invocation, error)
 	updateInvocationResult func(ctx context.Context, id string, status models.InvocationStatus, output, errMsg, stderr string, durationMs, peakMemoryMB int) error
 	getInvocation          func(ctx context.Context, id string) (*models.Invocation, error)
 }
@@ -31,8 +34,21 @@ func (m *mockStore) GetSnippetEnvironment(ctx context.Context, snippetID, env st
 func (m *mockStore) GetVersion(ctx context.Context, id string) (*models.SnippetVersion, error) {
 	return m.getVersion(ctx, id)
 }
+func (m *mockStore) GetVersionByNumber(ctx context.Context, snippetID string, num int) (*models.SnippetVersion, error) {
+	if m.getVersionByNumber != nil {
+		return m.getVersionByNumber(ctx, snippetID, num)
+	}
+	return nil, errors.New("GetVersionByNumber not implemented in mock")
+}
 func (m *mockStore) CreateInvocation(ctx context.Context, snippetID, versionID, env, tenantID, input string) (*models.Invocation, error) {
 	return m.createInvocation(ctx, snippetID, versionID, env, tenantID, input)
+}
+func (m *mockStore) CreateInvocationWithMode(ctx context.Context, snippetID, versionID, environment, tenantID, inputPayload, invokeMode, callbackURL string, status models.InvocationStatus) (*models.Invocation, error) {
+	if m.createInvocationWithMode != nil {
+		return m.createInvocationWithMode(ctx, snippetID, versionID, environment, tenantID, inputPayload, invokeMode, callbackURL, status)
+	}
+	// Fall back to createInvocation for backward compatibility in existing tests.
+	return m.createInvocation(ctx, snippetID, versionID, environment, tenantID, inputPayload)
 }
 func (m *mockStore) UpdateInvocationResult(ctx context.Context, id string, status models.InvocationStatus, output, errMsg, stderr string, durationMs, peakMemoryMB int) error {
 	return m.updateInvocationResult(ctx, id, status, output, errMsg, stderr, durationMs, peakMemoryMB)
@@ -41,12 +57,36 @@ func (m *mockStore) GetInvocation(ctx context.Context, id string) (*models.Invoc
 	return m.getInvocation(ctx, id)
 }
 
+// mockExecutor implements executor.Executor.
 type mockExecutor struct {
-	run func(ctx context.Context, spec executor.RunSpec) executor.RunResult
+	run       func(ctx context.Context, spec executor.RunSpec) executor.RunResult
+	runStream func(ctx context.Context, spec executor.RunSpec) (<-chan executor.StreamChunk, error)
 }
 
 func (m *mockExecutor) Run(ctx context.Context, spec executor.RunSpec) executor.RunResult {
-	return m.run(ctx, spec)
+	if m.run != nil {
+		return m.run(ctx, spec)
+	}
+	return executor.RunResult{}
+}
+
+func (m *mockExecutor) RunStream(ctx context.Context, spec executor.RunSpec) (<-chan executor.StreamChunk, error) {
+	if m.runStream != nil {
+		return m.runStream(ctx, spec)
+	}
+	ch := make(chan executor.StreamChunk)
+	close(ch)
+	return ch, nil
+}
+
+// mockQueue captures Enqueue calls.
+type mockQueue struct {
+	jobs []redisstore.Job
+}
+
+func (m *mockQueue) Enqueue(ctx context.Context, job redisstore.Job) error {
+	m.jobs = append(m.jobs, job)
+	return nil
 }
 
 // --- Fixtures ---
@@ -62,12 +102,13 @@ func fixSnippet() *models.Snippet {
 
 func fixVersion(id string) *models.SnippetVersion {
 	return &models.SnippetVersion{
-		ID:          id,
-		SnippetID:   "snip-1",
-		Code:        `export async function handler() { return {ok:true} }`,
-		TimeoutMs:   5000,
-		MaxMemoryMB: 128,
-		Status:      models.StatusPublished,
+		ID:            id,
+		SnippetID:     "snip-1",
+		VersionNumber: 1,
+		Code:          `export async function handler() { return {ok:true} }`,
+		TimeoutMs:     5000,
+		MaxMemoryMB:   128,
+		Status:        models.StatusPublished,
 	}
 }
 
@@ -80,18 +121,15 @@ func fixInvocation(id, versionID string) *models.Invocation {
 		Environment: "prod",
 		TenantID:    "tenant-1",
 		Status:      models.InvocationRunning,
+		InvokeMode:  "sync",
 		CreatedAt:   now,
 	}
 }
 
-// --- Tests ---
-
-func TestScheduler_Invoke_Success(t *testing.T) {
-	versionID := "ver-1"
-	invocationID := "inv-1"
-	activeVersion := versionID
-
-	store := &mockStore{
+// buildDefaultStore creates a mockStore pre-filled with happy-path behaviour.
+// Callers can override individual fields after calling this.
+func buildDefaultStore(invocationID, versionID string, activeVersion *string) *mockStore {
+	return &mockStore{
 		getSnippetBySlug: func(ctx context.Context, tenantID, slug string) (*models.Snippet, error) {
 			return fixSnippet(), nil
 		},
@@ -99,14 +137,26 @@ func TestScheduler_Invoke_Success(t *testing.T) {
 			return &models.SnippetEnvironment{
 				SnippetID:       snippetID,
 				Env:             env,
-				ActiveVersionID: &activeVersion,
+				ActiveVersionID: activeVersion,
 			}, nil
 		},
 		getVersion: func(ctx context.Context, id string) (*models.SnippetVersion, error) {
 			return fixVersion(id), nil
 		},
+		getVersionByNumber: func(ctx context.Context, snippetID string, num int) (*models.SnippetVersion, error) {
+			v := fixVersion(versionID)
+			v.VersionNumber = num
+			return v, nil
+		},
 		createInvocation: func(ctx context.Context, snippetID, versionID, env, tenantID, input string) (*models.Invocation, error) {
 			return fixInvocation(invocationID, versionID), nil
+		},
+		createInvocationWithMode: func(ctx context.Context, snippetID, versionID, environment, tenantID, inputPayload, invokeMode, callbackURL string, status models.InvocationStatus) (*models.Invocation, error) {
+			inv := fixInvocation(invocationID, versionID)
+			inv.Status = status
+			inv.InvokeMode = invokeMode
+			inv.CallbackURL = callbackURL
+			return inv, nil
 		},
 		updateInvocationResult: func(ctx context.Context, id string, status models.InvocationStatus, output, errMsg, stderr string, durationMs, peakMemoryMB int) error {
 			return nil
@@ -119,14 +169,19 @@ func TestScheduler_Invoke_Success(t *testing.T) {
 			return inv, nil
 		},
 	}
+}
 
+// --- Sync Invoke tests ---
+
+func TestScheduler_Invoke_Success(t *testing.T) {
+	versionID := "ver-1"
+	invocationID := "inv-1"
+	activeVersion := versionID
+
+	store := buildDefaultStore(invocationID, versionID, &activeVersion)
 	exec := &mockExecutor{
 		run: func(ctx context.Context, spec executor.RunSpec) executor.RunResult {
-			return executor.RunResult{
-				Output:     `{"ok":true}`,
-				DurationMs: 42,
-				ExitCode:   0,
-			}
+			return executor.RunResult{Output: `{"ok":true}`, DurationMs: 42, ExitCode: 0}
 		},
 	}
 
@@ -200,40 +255,20 @@ func TestScheduler_Invoke_ExecutorTimeout(t *testing.T) {
 	activeVersion := versionID
 
 	var capturedStatus models.InvocationStatus
-	store := &mockStore{
-		getSnippetBySlug: func(ctx context.Context, tenantID, slug string) (*models.Snippet, error) {
-			return fixSnippet(), nil
-		},
-		getSnippetEnvironment: func(ctx context.Context, snippetID, env string) (*models.SnippetEnvironment, error) {
-			return &models.SnippetEnvironment{
-				SnippetID:       snippetID,
-				Env:             env,
-				ActiveVersionID: &activeVersion,
-			}, nil
-		},
-		getVersion: func(ctx context.Context, id string) (*models.SnippetVersion, error) {
-			return fixVersion(id), nil
-		},
-		createInvocation: func(ctx context.Context, snippetID, versionID, env, tenantID, input string) (*models.Invocation, error) {
-			return fixInvocation(invocationID, versionID), nil
-		},
-		updateInvocationResult: func(ctx context.Context, id string, status models.InvocationStatus, output, errMsg, stderr string, durationMs, peakMemoryMB int) error {
-			capturedStatus = status
-			return nil
-		},
-		getInvocation: func(ctx context.Context, id string) (*models.Invocation, error) {
-			inv := fixInvocation(invocationID, versionID)
-			inv.Status = capturedStatus
-			return inv, nil
-		},
+	store := buildDefaultStore(invocationID, versionID, &activeVersion)
+	store.updateInvocationResult = func(ctx context.Context, id string, status models.InvocationStatus, output, errMsg, stderr string, durationMs, peakMemoryMB int) error {
+		capturedStatus = status
+		return nil
+	}
+	store.getInvocation = func(ctx context.Context, id string) (*models.Invocation, error) {
+		inv := fixInvocation(invocationID, versionID)
+		inv.Status = capturedStatus
+		return inv, nil
 	}
 
 	exec := &mockExecutor{
 		run: func(ctx context.Context, spec executor.RunSpec) executor.RunResult {
-			return executor.RunResult{
-				Error:    "timeout",
-				ExitCode: 1,
-			}
+			return executor.RunResult{Error: "timeout", ExitCode: 1}
 		},
 	}
 
@@ -259,30 +294,15 @@ func TestScheduler_Invoke_ExecutorOOM(t *testing.T) {
 	activeVersion := versionID
 
 	var capturedStatus models.InvocationStatus
-	store := &mockStore{
-		getSnippetBySlug: func(ctx context.Context, tenantID, slug string) (*models.Snippet, error) {
-			return fixSnippet(), nil
-		},
-		getSnippetEnvironment: func(ctx context.Context, snippetID, env string) (*models.SnippetEnvironment, error) {
-			return &models.SnippetEnvironment{
-				SnippetID: snippetID, Env: env, ActiveVersionID: &activeVersion,
-			}, nil
-		},
-		getVersion: func(ctx context.Context, id string) (*models.SnippetVersion, error) {
-			return fixVersion(id), nil
-		},
-		createInvocation: func(ctx context.Context, snippetID, versionID, env, tenantID, input string) (*models.Invocation, error) {
-			return fixInvocation(invocationID, versionID), nil
-		},
-		updateInvocationResult: func(ctx context.Context, id string, status models.InvocationStatus, output, errMsg, stderr string, durationMs, peakMemoryMB int) error {
-			capturedStatus = status
-			return nil
-		},
-		getInvocation: func(ctx context.Context, id string) (*models.Invocation, error) {
-			inv := fixInvocation(invocationID, versionID)
-			inv.Status = capturedStatus
-			return inv, nil
-		},
+	store := buildDefaultStore(invocationID, versionID, &activeVersion)
+	store.updateInvocationResult = func(ctx context.Context, id string, status models.InvocationStatus, output, errMsg, stderr string, durationMs, peakMemoryMB int) error {
+		capturedStatus = status
+		return nil
+	}
+	store.getInvocation = func(ctx context.Context, id string) (*models.Invocation, error) {
+		inv := fixInvocation(invocationID, versionID)
+		inv.Status = capturedStatus
+		return inv, nil
 	}
 
 	exec := &mockExecutor{
@@ -310,28 +330,10 @@ func TestScheduler_Invoke_DefaultsEmptyInputToEmptyObject(t *testing.T) {
 	activeVersion := versionID
 
 	var capturedInput string
-	store := &mockStore{
-		getSnippetBySlug: func(ctx context.Context, tenantID, slug string) (*models.Snippet, error) {
-			return fixSnippet(), nil
-		},
-		getSnippetEnvironment: func(ctx context.Context, snippetID, env string) (*models.SnippetEnvironment, error) {
-			return &models.SnippetEnvironment{
-				SnippetID: snippetID, Env: env, ActiveVersionID: &activeVersion,
-			}, nil
-		},
-		getVersion: func(ctx context.Context, id string) (*models.SnippetVersion, error) {
-			return fixVersion(id), nil
-		},
-		createInvocation: func(ctx context.Context, snippetID, versionID, env, tenantID, input string) (*models.Invocation, error) {
-			capturedInput = input
-			return fixInvocation(invocationID, versionID), nil
-		},
-		updateInvocationResult: func(ctx context.Context, id string, status models.InvocationStatus, output, errMsg, stderr string, durationMs, peakMemoryMB int) error {
-			return nil
-		},
-		getInvocation: func(ctx context.Context, id string) (*models.Invocation, error) {
-			return fixInvocation(invocationID, versionID), nil
-		},
+	store := buildDefaultStore(invocationID, versionID, &activeVersion)
+	store.createInvocation = func(ctx context.Context, snippetID, versionID, env, tenantID, input string) (*models.Invocation, error) {
+		capturedInput = input
+		return fixInvocation(invocationID, versionID), nil
 	}
 
 	exec := &mockExecutor{
@@ -351,5 +353,193 @@ func TestScheduler_Invoke_DefaultsEmptyInputToEmptyObject(t *testing.T) {
 	}
 	if capturedInput != "{}" {
 		t.Errorf("capturedInput = %q; want %q", capturedInput, "{}")
+	}
+}
+
+// --- Version pinning tests ---
+
+func TestScheduler_Invoke_PinnedVersion(t *testing.T) {
+	versionID := "ver-pinned"
+	invocationID := "inv-pin-1"
+	activeVersion := "ver-active" // different from pinned
+
+	var capturedVersionID string
+	store := buildDefaultStore(invocationID, versionID, &activeVersion)
+	store.getVersionByNumber = func(ctx context.Context, snippetID string, num int) (*models.SnippetVersion, error) {
+		if num != 2 {
+			return nil, errors.New("wrong version number")
+		}
+		v := fixVersion(versionID)
+		v.VersionNumber = 2
+		v.Code = "pinned-code"
+		return v, nil
+	}
+	store.createInvocation = func(ctx context.Context, snippetID, vid, env, tenantID, input string) (*models.Invocation, error) {
+		capturedVersionID = vid
+		return fixInvocation(invocationID, vid), nil
+	}
+
+	exec := &mockExecutor{
+		run: func(ctx context.Context, spec executor.RunSpec) executor.RunResult {
+			return executor.RunResult{Output: `{}`, ExitCode: 0}
+		},
+	}
+
+	sched := scheduler.New(store, exec)
+	_, err := sched.Invoke(context.Background(), scheduler.InvokeRequest{
+		TenantID:      "tenant-1",
+		SnippetSlug:   "hello",
+		Env:           "prod",
+		Input:         `{}`,
+		PinnedVersion: 2,
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if capturedVersionID != versionID {
+		t.Errorf("version ID = %q; want %q (pinned)", capturedVersionID, versionID)
+	}
+}
+
+func TestScheduler_Invoke_PinnedVersionNotFound(t *testing.T) {
+	versionID := "ver-1"
+	invocationID := "inv-1"
+	activeVersion := versionID
+
+	store := buildDefaultStore(invocationID, versionID, &activeVersion)
+	store.getVersionByNumber = func(ctx context.Context, snippetID string, num int) (*models.SnippetVersion, error) {
+		return nil, errors.New("version not found")
+	}
+
+	sched := scheduler.New(store, &mockExecutor{})
+	_, err := sched.Invoke(context.Background(), scheduler.InvokeRequest{
+		TenantID:      "tenant-1",
+		SnippetSlug:   "hello",
+		Env:           "prod",
+		PinnedVersion: 99,
+	})
+
+	if err == nil {
+		t.Fatal("expected error for non-existent pinned version, got nil")
+	}
+}
+
+// --- Async tests ---
+
+func TestScheduler_InvokeAsync_Success(t *testing.T) {
+	versionID := "ver-1"
+	invocationID := "inv-async-1"
+	activeVersion := versionID
+
+	store := buildDefaultStore(invocationID, versionID, &activeVersion)
+	queue := &mockQueue{}
+	exec := &mockExecutor{}
+
+	sched := scheduler.NewWithQueue(store, exec, queue)
+	inv, err := sched.InvokeAsync(context.Background(), scheduler.InvokeRequest{
+		TenantID:    "tenant-1",
+		SnippetSlug: "hello",
+		Env:         "prod",
+		Input:       `{}`,
+	}, "https://example.com/webhook")
+
+	if err != nil {
+		t.Fatalf("InvokeAsync error: %v", err)
+	}
+	if inv == nil {
+		t.Fatal("InvokeAsync returned nil invocation")
+	}
+	if inv.Status != models.InvocationPending {
+		t.Errorf("status = %q; want %q", inv.Status, models.InvocationPending)
+	}
+	if inv.InvokeMode != "async" {
+		t.Errorf("invoke_mode = %q; want %q", inv.InvokeMode, "async")
+	}
+
+	// Verify job was enqueued.
+	if len(queue.jobs) != 1 {
+		t.Fatalf("expected 1 enqueued job, got %d", len(queue.jobs))
+	}
+	job := queue.jobs[0]
+	if job.InvocationID != invocationID {
+		t.Errorf("job.InvocationID = %q; want %q", job.InvocationID, invocationID)
+	}
+	if job.CallbackURL != "https://example.com/webhook" {
+		t.Errorf("job.CallbackURL = %q; want https://example.com/webhook", job.CallbackURL)
+	}
+}
+
+func TestScheduler_InvokeAsync_NoQueue(t *testing.T) {
+	versionID := "ver-1"
+	invocationID := "inv-1"
+	activeVersion := versionID
+
+	store := buildDefaultStore(invocationID, versionID, &activeVersion)
+
+	// No queue — New (not NewWithQueue).
+	sched := scheduler.New(store, &mockExecutor{})
+	_, err := sched.InvokeAsync(context.Background(), scheduler.InvokeRequest{
+		TenantID:    "tenant-1",
+		SnippetSlug: "hello",
+		Env:         "prod",
+	}, "")
+
+	if err == nil {
+		t.Fatal("expected error when queue is not configured, got nil")
+	}
+}
+
+// --- Stream tests ---
+
+func TestScheduler_InvokeStream_Success(t *testing.T) {
+	versionID := "ver-1"
+	invocationID := "inv-stream-1"
+	activeVersion := versionID
+
+	store := buildDefaultStore(invocationID, versionID, &activeVersion)
+
+	streamCh := make(chan executor.StreamChunk, 3)
+	streamCh <- executor.StreamChunk{Data: `{"chunk":"a"}`, Done: false}
+	streamCh <- executor.StreamChunk{Data: `{"chunk":"b"}`, Done: false}
+	streamCh <- executor.StreamChunk{Data: ``, Done: true}
+	close(streamCh)
+
+	exec := &mockExecutor{
+		runStream: func(ctx context.Context, spec executor.RunSpec) (<-chan executor.StreamChunk, error) {
+			return streamCh, nil
+		},
+	}
+
+	sched := scheduler.New(store, exec)
+	ch, inv, err := sched.InvokeStream(context.Background(), scheduler.InvokeRequest{
+		TenantID:    "tenant-1",
+		SnippetSlug: "hello",
+		Env:         "prod",
+		Input:       `{}`,
+	})
+
+	if err != nil {
+		t.Fatalf("InvokeStream error: %v", err)
+	}
+	if inv == nil {
+		t.Fatal("InvokeStream returned nil invocation")
+	}
+	if inv.Status != models.InvocationRunning {
+		t.Errorf("status = %q; want %q", inv.Status, models.InvocationRunning)
+	}
+	if inv.InvokeMode != "stream" {
+		t.Errorf("invoke_mode = %q; want %q", inv.InvokeMode, "stream")
+	}
+
+	var chunks []executor.StreamChunk
+	for c := range ch {
+		chunks = append(chunks, c)
+	}
+	if len(chunks) != 3 {
+		t.Errorf("got %d chunks; want 3", len(chunks))
+	}
+	if !chunks[len(chunks)-1].Done {
+		t.Error("last chunk should have Done=true")
 	}
 }
