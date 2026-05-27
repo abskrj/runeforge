@@ -7,7 +7,8 @@
  * a timeout, and returns a structured result.
  *
  * Expected request body:
- *   { code: string, input: string, timeout_ms: number, max_memory_mb: number }
+ *   { code: string, input: string, timeout_ms: number, max_memory_mb: number,
+ *     secret_env_vars?: Record<string,string>, egress_policy?: EgressPolicy }
  *
  * POST /run response body:
  *   { output: string, stderr: string, duration_ms: number, peak_memory_mb: number, exit_code: number, error: string }
@@ -42,11 +43,18 @@ import { join } from "node:path";
 
 const PORT = 8080;
 
+interface EgressPolicy {
+  blocked_cidrs: string[];
+  blocked_domains: string[];
+}
+
 interface RunRequest {
   code: string;
   input: string;
   timeout_ms: number;
   max_memory_mb: number;
+  secret_env_vars?: Record<string, string>;
+  egress_policy?: EgressPolicy;
 }
 
 interface RunResult {
@@ -59,13 +67,28 @@ interface RunResult {
 }
 
 /**
+ * Build the env vars to pass to the subprocess.
+ * Merges process.env with any secret_env_vars from the run request.
+ */
+function buildEnv(req: RunRequest): Record<string, string> {
+  const env: Record<string, string> = { ...process.env } as Record<string, string>;
+  env["SNIPPET_INPUT"] = req.input;
+  for (const [key, val] of Object.entries(req.secret_env_vars ?? {})) {
+    env[key] = val;
+  }
+  return env;
+}
+
+/**
  * Write the wrapper harness that imports the snippet and runs handler().
  * The snippet's output is printed as JSON to stdout.
+ * If an egress_policy is present, wraps the global fetch to block domains.
  */
-function buildHarnessCode(snippetPath: string, input: string): string {
+function buildHarnessCode(snippetPath: string, input: string, egressPolicy?: EgressPolicy): string {
   // Escape the input and path for safe embedding in JS source.
   const safeInput = JSON.stringify(input);
   const safePath = JSON.stringify(snippetPath);
+  const safeEgress = JSON.stringify(egressPolicy ?? null);
 
   return `
 import snippetModule from ${safePath};
@@ -77,6 +100,22 @@ const handler = typeof snippetModule === 'function'
 if (typeof handler !== 'function') {
   console.error('Snippet must export a default function or a function named "handler"');
   process.exit(1);
+}
+
+// Egress policy enforcement: wrap fetch to block disallowed domains.
+const egressPolicy = ${safeEgress};
+if (egressPolicy && egressPolicy.blocked_domains && egressPolicy.blocked_domains.length > 0) {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === 'string' ? new URL(input) : new URL(input.url);
+    const hostname = url.hostname;
+    for (const domain of egressPolicy.blocked_domains) {
+      if (hostname === domain || hostname.endsWith('.' + domain)) {
+        throw new Error('Egress blocked: ' + hostname + ' is in the domain blocklist');
+      }
+    }
+    return originalFetch(input, init);
+  };
 }
 
 const rawInput = ${safeInput};
@@ -105,10 +144,12 @@ try {
 /**
  * Write the streaming harness that imports the snippet and yields chunks as
  * SSE-formatted JSON to stdout. Each line is a complete JSON object.
+ * If an egress_policy is present, wraps the global fetch to block domains.
  */
-function buildStreamHarnessCode(snippetPath: string, input: string): string {
+function buildStreamHarnessCode(snippetPath: string, input: string, egressPolicy?: EgressPolicy): string {
   const safeInput = JSON.stringify(input);
   const safePath = JSON.stringify(snippetPath);
+  const safeEgress = JSON.stringify(egressPolicy ?? null);
 
   return `
 import snippetModule from ${safePath};
@@ -120,6 +161,22 @@ const handler = typeof snippetModule === 'function'
 if (typeof handler !== 'function') {
   console.error(JSON.stringify({ chunk: '', error: 'Snippet must export a default function', done: true }));
   process.exit(1);
+}
+
+// Egress policy enforcement: wrap fetch to block disallowed domains.
+const egressPolicy = ${safeEgress};
+if (egressPolicy && egressPolicy.blocked_domains && egressPolicy.blocked_domains.length > 0) {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === 'string' ? new URL(input) : new URL(input.url);
+    const hostname = url.hostname;
+    for (const domain of egressPolicy.blocked_domains) {
+      if (hostname === domain || hostname.endsWith('.' + domain)) {
+        throw new Error('Egress blocked: ' + hostname + ' is in the domain blocklist');
+      }
+    }
+    return originalFetch(input, init);
+  };
 }
 
 const rawInput = ${safeInput};
@@ -164,7 +221,7 @@ async function runSnippet(req: RunRequest): Promise<RunResult> {
 
   try {
     await writeFile(snippetPath, req.code, "utf8");
-    const harnessCode = buildHarnessCode(snippetPath, req.input);
+    const harnessCode = buildHarnessCode(snippetPath, req.input, req.egress_policy);
     await writeFile(harnessPath, harnessCode, "utf8");
 
     const timeoutMs = req.timeout_ms > 0 ? req.timeout_ms : 30_000;
@@ -174,12 +231,12 @@ async function runSnippet(req: RunRequest): Promise<RunResult> {
     const start = Date.now();
     let proc: ReturnType<typeof Bun.spawn> | null = null;
 
+    // Build env: merge process.env + secret_env_vars.
+    const env = buildEnv(req);
+
     try {
       proc = Bun.spawn(["bun", "run", harnessPath], {
-        env: {
-          ...process.env,
-          SNIPPET_INPUT: req.input,
-        },
+        env,
         stdout: "pipe",
         stderr: "pipe",
         signal: controller.signal,
@@ -294,11 +351,14 @@ async function runSnippetStream(req: RunRequest): Promise<ReadableStream<Uint8Ar
 
   const encoder = new TextEncoder();
 
+  // Build env: merge process.env + secret_env_vars.
+  const env = buildEnv(req);
+
   return new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
         await writeFile(snippetPath, req.code, "utf8");
-        const harnessCode = buildStreamHarnessCode(snippetPath, req.input);
+        const harnessCode = buildStreamHarnessCode(snippetPath, req.input, req.egress_policy);
         await writeFile(harnessPath, harnessCode, "utf8");
 
         const timeoutMs = req.timeout_ms > 0 ? req.timeout_ms : 30_000;
@@ -309,7 +369,7 @@ async function runSnippetStream(req: RunRequest): Promise<ReadableStream<Uint8Ar
 
         try {
           proc = Bun.spawn(["bun", "run", harnessPath], {
-            env: { ...process.env, SNIPPET_INPUT: req.input },
+            env,
             stdout: "pipe",
             stderr: "pipe",
             signal: abortController.signal,

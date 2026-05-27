@@ -38,6 +38,9 @@ func main() {
 		zap.Int("worker_count", cfg.WorkerCount),
 	)
 
+	// --- Encryption key ---
+	encKey := cfg.EncryptionKeyBytes(log)
+
 	// --- Context (cancelled on shutdown signal) ---
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -63,11 +66,11 @@ func main() {
 			zap.String("redis_url", cfg.RedisURL),
 			zap.Error(err),
 		)
-		sched = scheduler.New(store, exec)
+		sched = scheduler.New(store, exec, encKey)
 	} else {
 		redisClient = rc
 		log.Info("redis connected", zap.String("redis_url", cfg.RedisURL))
-		sched = scheduler.NewWithQueue(store, exec, redisClient)
+		sched = scheduler.NewWithQueue(store, exec, redisClient, encKey)
 	}
 
 	// --- Background worker (only if Redis is available) ---
@@ -78,7 +81,7 @@ func main() {
 	}
 
 	// --- Router ---
-	router := api.NewRouter(store, sched, log)
+	router := api.NewRouter(store, sched, log, encKey)
 
 	// --- HTTP server ---
 	srv := &http.Server{

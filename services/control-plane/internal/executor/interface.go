@@ -2,13 +2,22 @@ package executor
 
 import "context"
 
+// EgressPolicy defines the network egress restrictions to enforce during
+// snippet execution.
+type EgressPolicy struct {
+	BlockedCIDRs   []string `json:"blocked_cidrs"`
+	BlockedDomains []string `json:"blocked_domains"`
+}
+
 // RunSpec describes a single snippet execution request sent to an executor.
 type RunSpec struct {
-	Language    string // "bun" | "python"
-	Code        string // raw source code of the snippet
-	Input       string // raw JSON input payload
-	TimeoutMs   int    // execution deadline in milliseconds
-	MaxMemoryMB int    // soft memory ceiling in MiB
+	Language      string            // "bun" | "python"
+	Code          string            // raw source code of the snippet
+	Input         string            // raw JSON input payload
+	TimeoutMs     int               // execution deadline in milliseconds
+	MaxMemoryMB   int               // soft memory ceiling in MiB
+	SecretEnvVars map[string]string // injected as env vars into the snippet process
+	EgressPolicy  *EgressPolicy     // nil = no policy enforcement
 }
 
 // RunResult captures the outcome of a snippet execution.

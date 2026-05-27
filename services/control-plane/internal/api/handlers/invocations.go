@@ -119,8 +119,8 @@ func (h *InvocationsHandler) Invoke(w http.ResponseWriter, r *http.Request) {
 	if env == "" {
 		env = "prod"
 	}
-	if env != "dev" && env != "prod" {
-		writeError(w, http.StatusBadRequest, "env must be 'dev' or 'prod'")
+	if env != "dev" && env != "staging" && env != "prod" {
+		writeError(w, http.StatusBadRequest, "env must be 'dev', 'staging', or 'prod'")
 		return
 	}
 

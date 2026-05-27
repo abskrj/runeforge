@@ -28,8 +28,8 @@ func (s *Store) CreateSnippet(ctx context.Context, tenantID, name, slug, languag
 		return nil, fmt.Errorf("CreateSnippet scan: %w", err)
 	}
 
-	// Seed environment rows for dev and prod.
-	for _, env := range []string{"dev", "prod"} {
+	// Seed environment rows for dev, staging, and prod.
+	for _, env := range []string{"dev", "staging", "prod"} {
 		_, err := tx.Exec(ctx,
 			`INSERT INTO snippet_environments (snippet_id, env)
 			 VALUES ($1, $2)
@@ -102,12 +102,12 @@ func (s *Store) DeleteSnippet(ctx context.Context, id string) error {
 // GetSnippetEnvironment retrieves the environment record for a snippet+env pair.
 func (s *Store) GetSnippetEnvironment(ctx context.Context, snippetID, env string) (*models.SnippetEnvironment, error) {
 	row := s.pool.QueryRow(ctx,
-		`SELECT snippet_id, env, active_version_id, min_instances
+		`SELECT snippet_id, env, active_version_id, min_instances, canary_version_id, canary_pct
 		 FROM snippet_environments WHERE snippet_id = $1 AND env = $2`,
 		snippetID, env,
 	)
 	var se models.SnippetEnvironment
-	if err := row.Scan(&se.SnippetID, &se.Env, &se.ActiveVersionID, &se.MinInstances); err != nil {
+	if err := row.Scan(&se.SnippetID, &se.Env, &se.ActiveVersionID, &se.MinInstances, &se.CanaryVersionID, &se.CanaryPct); err != nil {
 		return nil, fmt.Errorf("GetSnippetEnvironment scan: %w", err)
 	}
 	return &se, nil

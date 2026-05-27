@@ -5,6 +5,8 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/runeforge/control-plane/internal/api/middleware"
+	"github.com/runeforge/control-plane/internal/models"
 	"github.com/runeforge/control-plane/internal/store/postgres"
 	"go.uber.org/zap"
 )
@@ -93,12 +95,92 @@ func (h *TenantsHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 
 	// Return the plain key only once — it cannot be recovered after this.
 	writeJSON(w, http.StatusCreated, map[string]any{
-		"id":          key.ID,
-		"tenant_id":   key.TenantID,
-		"name":        key.Name,
-		"scopes":      key.Scopes,
-		"key":         plain, // one-time reveal
-		"key_prefix":  key.KeyPrefix,
-		"created_at":  key.CreatedAt,
+		"id":         key.ID,
+		"tenant_id":  key.TenantID,
+		"name":       key.Name,
+		"scopes":     key.Scopes,
+		"key":        plain, // one-time reveal
+		"key_prefix": key.KeyPrefix,
+		"created_at": key.CreatedAt,
 	})
+}
+
+// updateEgressPolicyRequest is the expected PUT body for egress policy updates.
+type updateEgressPolicyRequest struct {
+	BlockedCIDRs   []string `json:"blocked_cidrs"`
+	BlockedDomains []string `json:"blocked_domains"`
+}
+
+// GetEgressPolicy handles GET /v1/tenants/{tenantSlug}/egress.
+func (h *TenantsHandler) GetEgressPolicy(w http.ResponseWriter, r *http.Request) {
+	tenantSlug := chi.URLParam(r, "tenantSlug")
+
+	tenant, err := h.store.GetTenantBySlug(r.Context(), tenantSlug)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "tenant not found")
+		return
+	}
+
+	// Enforce tenant isolation: the authenticated tenant must match.
+	authTenant := middleware.TenantFromContext(r.Context())
+	if authTenant == nil {
+		writeError(w, http.StatusUnauthorized, "unauthenticated")
+		return
+	}
+	if authTenant.ID != tenant.ID {
+		writeError(w, http.StatusForbidden, "access denied")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, tenant.EgressPolicy)
+}
+
+// UpdateEgressPolicy handles PUT /v1/tenants/{tenantSlug}/egress.
+// Requires admin scope.
+func (h *TenantsHandler) UpdateEgressPolicy(w http.ResponseWriter, r *http.Request) {
+	tenantSlug := chi.URLParam(r, "tenantSlug")
+
+	tenant, err := h.store.GetTenantBySlug(r.Context(), tenantSlug)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "tenant not found")
+		return
+	}
+
+	// Enforce tenant isolation.
+	authTenant := middleware.TenantFromContext(r.Context())
+	if authTenant == nil {
+		writeError(w, http.StatusUnauthorized, "unauthenticated")
+		return
+	}
+	if authTenant.ID != tenant.ID {
+		writeError(w, http.StatusForbidden, "access denied")
+		return
+	}
+
+	var req updateEgressPolicyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.BlockedCIDRs == nil {
+		req.BlockedCIDRs = []string{}
+	}
+	if req.BlockedDomains == nil {
+		req.BlockedDomains = []string{}
+	}
+
+	policy := models.EgressPolicy{
+		BlockedCIDRs:   req.BlockedCIDRs,
+		BlockedDomains: req.BlockedDomains,
+	}
+
+	updated, err := h.store.UpdateEgressPolicy(r.Context(), tenant.ID, policy)
+	if err != nil {
+		h.log.Error("update egress policy failed", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "failed to update egress policy")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, updated.EgressPolicy)
 }

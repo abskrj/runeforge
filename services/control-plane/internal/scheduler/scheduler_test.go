@@ -12,17 +12,22 @@ import (
 	redisstore "github.com/runeforge/control-plane/internal/store/redis"
 )
 
+// testEncKey is a zeroed 32-byte key used in scheduler unit tests.
+var testEncKey = make([]byte, 32)
+
 // --- Mocks ---
 
 type mockStore struct {
-	getSnippetBySlug       func(ctx context.Context, tenantID, slug string) (*models.Snippet, error)
-	getSnippetEnvironment  func(ctx context.Context, snippetID, env string) (*models.SnippetEnvironment, error)
-	getVersion             func(ctx context.Context, id string) (*models.SnippetVersion, error)
-	getVersionByNumber     func(ctx context.Context, snippetID string, num int) (*models.SnippetVersion, error)
-	createInvocation       func(ctx context.Context, snippetID, versionID, env, tenantID, input string) (*models.Invocation, error)
+	getSnippetBySlug         func(ctx context.Context, tenantID, slug string) (*models.Snippet, error)
+	getSnippetEnvironment    func(ctx context.Context, snippetID, env string) (*models.SnippetEnvironment, error)
+	getVersion               func(ctx context.Context, id string) (*models.SnippetVersion, error)
+	getVersionByNumber       func(ctx context.Context, snippetID string, num int) (*models.SnippetVersion, error)
+	createInvocation         func(ctx context.Context, snippetID, versionID, env, tenantID, input string) (*models.Invocation, error)
 	createInvocationWithMode func(ctx context.Context, snippetID, versionID, environment, tenantID, inputPayload, invokeMode, callbackURL string, status models.InvocationStatus) (*models.Invocation, error)
-	updateInvocationResult func(ctx context.Context, id string, status models.InvocationStatus, output, errMsg, stderr string, durationMs, peakMemoryMB int) error
-	getInvocation          func(ctx context.Context, id string) (*models.Invocation, error)
+	updateInvocationResult   func(ctx context.Context, id string, status models.InvocationStatus, output, errMsg, stderr string, durationMs, peakMemoryMB int) error
+	getInvocation            func(ctx context.Context, id string) (*models.Invocation, error)
+	getSecretsForInvocation  func(ctx context.Context, tenantID, snippetID, env string, encKey []byte) (map[string]string, error)
+	getTenantByID            func(ctx context.Context, id string) (*models.Tenant, error)
 }
 
 func (m *mockStore) GetSnippetBySlug(ctx context.Context, tenantID, slug string) (*models.Snippet, error) {
@@ -55,6 +60,26 @@ func (m *mockStore) UpdateInvocationResult(ctx context.Context, id string, statu
 }
 func (m *mockStore) GetInvocation(ctx context.Context, id string) (*models.Invocation, error) {
 	return m.getInvocation(ctx, id)
+}
+func (m *mockStore) GetSecretsForInvocation(ctx context.Context, tenantID, snippetID, env string, encKey []byte) (map[string]string, error) {
+	if m.getSecretsForInvocation != nil {
+		return m.getSecretsForInvocation(ctx, tenantID, snippetID, env, encKey)
+	}
+	return map[string]string{}, nil
+}
+func (m *mockStore) GetTenantByID(ctx context.Context, id string) (*models.Tenant, error) {
+	if m.getTenantByID != nil {
+		return m.getTenantByID(ctx, id)
+	}
+	return &models.Tenant{
+		ID:   id,
+		Name: "Test Tenant",
+		Slug: "test-tenant",
+		EgressPolicy: models.EgressPolicy{
+			BlockedCIDRs:   []string{},
+			BlockedDomains: []string{},
+		},
+	}, nil
 }
 
 // mockExecutor implements executor.Executor.
@@ -185,7 +210,7 @@ func TestScheduler_Invoke_Success(t *testing.T) {
 		},
 	}
 
-	sched := scheduler.New(store, exec)
+	sched := scheduler.New(store, exec, testEncKey)
 	inv, err := sched.Invoke(context.Background(), scheduler.InvokeRequest{
 		TenantID:    "tenant-1",
 		SnippetSlug: "hello",
@@ -211,7 +236,7 @@ func TestScheduler_Invoke_SnippetNotFound(t *testing.T) {
 		},
 	}
 
-	sched := scheduler.New(store, &mockExecutor{})
+	sched := scheduler.New(store, &mockExecutor{}, testEncKey)
 	_, err := sched.Invoke(context.Background(), scheduler.InvokeRequest{
 		TenantID:    "tenant-1",
 		SnippetSlug: "missing",
@@ -237,7 +262,7 @@ func TestScheduler_Invoke_NoPublishedVersion(t *testing.T) {
 		},
 	}
 
-	sched := scheduler.New(store, &mockExecutor{})
+	sched := scheduler.New(store, &mockExecutor{}, testEncKey)
 	_, err := sched.Invoke(context.Background(), scheduler.InvokeRequest{
 		TenantID:    "tenant-1",
 		SnippetSlug: "hello",
@@ -272,7 +297,7 @@ func TestScheduler_Invoke_ExecutorTimeout(t *testing.T) {
 		},
 	}
 
-	sched := scheduler.New(store, exec)
+	sched := scheduler.New(store, exec, testEncKey)
 	inv, err := sched.Invoke(context.Background(), scheduler.InvokeRequest{
 		TenantID:    "tenant-1",
 		SnippetSlug: "hello",
@@ -311,7 +336,7 @@ func TestScheduler_Invoke_ExecutorOOM(t *testing.T) {
 		},
 	}
 
-	sched := scheduler.New(store, exec)
+	sched := scheduler.New(store, exec, testEncKey)
 	inv, err := sched.Invoke(context.Background(), scheduler.InvokeRequest{
 		TenantID: "tenant-1", SnippetSlug: "hello", Env: "prod", Input: `{}`,
 	})
@@ -342,7 +367,7 @@ func TestScheduler_Invoke_DefaultsEmptyInputToEmptyObject(t *testing.T) {
 		},
 	}
 
-	sched := scheduler.New(store, exec)
+	sched := scheduler.New(store, exec, testEncKey)
 	_, err := sched.Invoke(context.Background(), scheduler.InvokeRequest{
 		TenantID: "tenant-1", SnippetSlug: "hello", Env: "prod",
 		Input: "", // empty — should default to "{}"
@@ -385,7 +410,7 @@ func TestScheduler_Invoke_PinnedVersion(t *testing.T) {
 		},
 	}
 
-	sched := scheduler.New(store, exec)
+	sched := scheduler.New(store, exec, testEncKey)
 	_, err := sched.Invoke(context.Background(), scheduler.InvokeRequest{
 		TenantID:      "tenant-1",
 		SnippetSlug:   "hello",
@@ -412,7 +437,7 @@ func TestScheduler_Invoke_PinnedVersionNotFound(t *testing.T) {
 		return nil, errors.New("version not found")
 	}
 
-	sched := scheduler.New(store, &mockExecutor{})
+	sched := scheduler.New(store, &mockExecutor{}, testEncKey)
 	_, err := sched.Invoke(context.Background(), scheduler.InvokeRequest{
 		TenantID:      "tenant-1",
 		SnippetSlug:   "hello",
@@ -436,7 +461,7 @@ func TestScheduler_InvokeAsync_Success(t *testing.T) {
 	queue := &mockQueue{}
 	exec := &mockExecutor{}
 
-	sched := scheduler.NewWithQueue(store, exec, queue)
+	sched := scheduler.NewWithQueue(store, exec, queue, testEncKey)
 	inv, err := sched.InvokeAsync(context.Background(), scheduler.InvokeRequest{
 		TenantID:    "tenant-1",
 		SnippetSlug: "hello",
@@ -478,7 +503,7 @@ func TestScheduler_InvokeAsync_NoQueue(t *testing.T) {
 	store := buildDefaultStore(invocationID, versionID, &activeVersion)
 
 	// No queue — New (not NewWithQueue).
-	sched := scheduler.New(store, &mockExecutor{})
+	sched := scheduler.New(store, &mockExecutor{}, testEncKey)
 	_, err := sched.InvokeAsync(context.Background(), scheduler.InvokeRequest{
 		TenantID:    "tenant-1",
 		SnippetSlug: "hello",
@@ -511,7 +536,7 @@ func TestScheduler_InvokeStream_Success(t *testing.T) {
 		},
 	}
 
-	sched := scheduler.New(store, exec)
+	sched := scheduler.New(store, exec, testEncKey)
 	ch, inv, err := sched.InvokeStream(context.Background(), scheduler.InvokeRequest{
 		TenantID:    "tenant-1",
 		SnippetSlug: "hello",
@@ -541,5 +566,105 @@ func TestScheduler_InvokeStream_Success(t *testing.T) {
 	}
 	if !chunks[len(chunks)-1].Done {
 		t.Error("last chunk should have Done=true")
+	}
+}
+
+// --- Phase 3: Canary routing tests ---
+
+func TestScheduler_Invoke_CanaryRouting(t *testing.T) {
+	activeVersionID := "ver-active"
+	canaryVersionID := "ver-canary"
+	invocationID := "inv-canary-1"
+
+	var capturedVersionID string
+
+	store := buildDefaultStore(invocationID, activeVersionID, &activeVersionID)
+
+	// Override getSnippetEnvironment to return canary with 100% so it always triggers.
+	store.getSnippetEnvironment = func(ctx context.Context, snippetID, env string) (*models.SnippetEnvironment, error) {
+		canary := canaryVersionID
+		return &models.SnippetEnvironment{
+			SnippetID:       snippetID,
+			Env:             env,
+			ActiveVersionID: &activeVersionID,
+			CanaryVersionID: &canary,
+			CanaryPct:       100, // always route to canary
+		}, nil
+	}
+
+	// GetVersion should return different versions depending on ID.
+	store.getVersion = func(ctx context.Context, id string) (*models.SnippetVersion, error) {
+		return fixVersion(id), nil
+	}
+
+	store.createInvocation = func(ctx context.Context, snippetID, versionID, env, tenantID, input string) (*models.Invocation, error) {
+		capturedVersionID = versionID
+		return fixInvocation(invocationID, versionID), nil
+	}
+
+	exec := &mockExecutor{
+		run: func(ctx context.Context, spec executor.RunSpec) executor.RunResult {
+			return executor.RunResult{Output: `{"ok":true}`, ExitCode: 0}
+		},
+	}
+
+	sched := scheduler.New(store, exec, testEncKey)
+	_, err := sched.Invoke(context.Background(), scheduler.InvokeRequest{
+		TenantID:    "tenant-1",
+		SnippetSlug: "hello",
+		Env:         "prod",
+		Input:       `{}`,
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if capturedVersionID != canaryVersionID {
+		t.Errorf("versionID = %q; want %q (canary should be used at 100%%)", capturedVersionID, canaryVersionID)
+	}
+}
+
+// --- Phase 3: Secret injection test ---
+
+func TestScheduler_Invoke_SecretsInjected(t *testing.T) {
+	versionID := "ver-1"
+	invocationID := "inv-sec-1"
+	activeVersion := versionID
+
+	store := buildDefaultStore(invocationID, versionID, &activeVersion)
+
+	// Return a secret from the store.
+	store.getSecretsForInvocation = func(ctx context.Context, tenantID, snippetID, env string, encKey []byte) (map[string]string, error) {
+		return map[string]string{
+			"MY_SECRET": "top-secret-value",
+		}, nil
+	}
+
+	var capturedSpec executor.RunSpec
+	exec := &mockExecutor{
+		run: func(ctx context.Context, spec executor.RunSpec) executor.RunResult {
+			capturedSpec = spec
+			return executor.RunResult{Output: `{"ok":true}`, ExitCode: 0}
+		},
+	}
+
+	sched := scheduler.New(store, exec, testEncKey)
+	_, err := sched.Invoke(context.Background(), scheduler.InvokeRequest{
+		TenantID:    "tenant-1",
+		SnippetSlug: "hello",
+		Env:         "prod",
+		Input:       `{}`,
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if capturedSpec.SecretEnvVars == nil {
+		t.Fatal("SecretEnvVars should be set on RunSpec")
+	}
+	if capturedSpec.SecretEnvVars["MY_SECRET"] != "top-secret-value" {
+		t.Errorf("MY_SECRET = %q; want %q", capturedSpec.SecretEnvVars["MY_SECRET"], "top-secret-value")
 	}
 }

@@ -54,6 +54,7 @@ services:
       PORT: "8080"
       REDIS_URL: redis:6379
       WORKER_COUNT: "5"
+      ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000001"
     depends_on:
       postgres:
         condition: service_healthy

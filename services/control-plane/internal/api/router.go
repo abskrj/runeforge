@@ -13,7 +13,7 @@ import (
 )
 
 // NewRouter builds and returns the fully configured chi router.
-func NewRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger) http.Handler {
+func NewRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte) http.Handler {
 	r := chi.NewRouter()
 
 	// Global middleware.
@@ -26,6 +26,7 @@ func NewRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 	snippetsH := handlers.NewSnippetsHandler(store, log)
 	versionsH := handlers.NewVersionsHandler(store, log)
 	invocationsH := handlers.NewInvocationsHandler(store, sched, log)
+	secretsH := handlers.NewSecretsHandler(store, log, encKey)
 
 	// Health check — no auth.
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -47,6 +48,11 @@ func NewRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 		r.With(middleware.RequireScope("admin", log)).
 			Post("/v1/tenants/{tenantSlug}/api-keys", tenantsH.CreateAPIKey)
 
+		// Egress policy.
+		r.Get("/v1/tenants/{tenantSlug}/egress", tenantsH.GetEgressPolicy)
+		r.With(middleware.RequireScope("admin", log)).
+			Put("/v1/tenants/{tenantSlug}/egress", tenantsH.UpdateEgressPolicy)
+
 		// Snippets.
 		r.Get("/v1/snippets", snippetsH.ListSnippets)
 		r.With(middleware.RequireScope("manage", log)).
@@ -62,6 +68,19 @@ func NewRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 		r.Get("/v1/snippets/{snippetID}/versions/{num}", versionsH.GetVersion)
 		r.With(middleware.RequireScope("manage", log)).
 			Post("/v1/snippets/{snippetID}/versions/{num}/publish", versionsH.PublishVersion)
+
+		// Canary traffic splitting.
+		r.With(middleware.RequireScope("manage", log)).
+			Post("/v1/snippets/{snippetID}/canary", versionsH.SetCanary)
+		r.With(middleware.RequireScope("manage", log)).
+			Delete("/v1/snippets/{snippetID}/canary", versionsH.ClearCanary)
+
+		// Secrets.
+		r.Get("/v1/secrets", secretsH.ListSecrets)
+		r.With(middleware.RequireScope("manage", log)).
+			Post("/v1/secrets", secretsH.CreateSecret)
+		r.With(middleware.RequireScope("manage", log)).
+			Delete("/v1/secrets/{secretID}", secretsH.DeleteSecret)
 
 		// Invocation detail lookup.
 		r.Get("/v1/invocations/{id}", invocationsH.GetInvocation)

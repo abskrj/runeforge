@@ -14,6 +14,9 @@ var migrationSQL1 string
 //go:embed migrations/002_phase2.sql
 var migrationSQL2 string
 
+//go:embed migrations/003_phase3.sql
+var migrationSQL3 string
+
 // Store wraps a pgxpool.Pool and provides all database operations.
 type Store struct {
 	pool *pgxpool.Pool
@@ -32,7 +35,7 @@ func New(ctx context.Context, dsn string) (*Store, error) {
 		return nil, fmt.Errorf("postgres ping: %w", err)
 	}
 
-	for i, sql := range []string{migrationSQL1, migrationSQL2} {
+	for i, sql := range []string{migrationSQL1, migrationSQL2, migrationSQL3} {
 		if _, err := pool.Exec(ctx, sql); err != nil {
 			pool.Close()
 			return nil, fmt.Errorf("running migration %d: %w", i+1, err)

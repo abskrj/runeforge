@@ -162,6 +162,38 @@ func (s *Store) PublishVersion(ctx context.Context, versionID, env string) (*mod
 	return v, nil
 }
 
+// SetCanary sets the canary version and traffic percentage for an environment.
+// pct=0 effectively disables canary. pct=100 sends all traffic to canary.
+func (s *Store) SetCanary(ctx context.Context, snippetID, env, canaryVersionID string, pct int) (*models.SnippetEnvironment, error) {
+	row := s.pool.QueryRow(ctx,
+		`UPDATE snippet_environments
+		 SET canary_version_id = $3, canary_pct = $4
+		 WHERE snippet_id = $1 AND env = $2
+		 RETURNING snippet_id, env, active_version_id, min_instances, canary_version_id, canary_pct`,
+		snippetID, env, canaryVersionID, pct,
+	)
+
+	var se models.SnippetEnvironment
+	if err := row.Scan(&se.SnippetID, &se.Env, &se.ActiveVersionID, &se.MinInstances, &se.CanaryVersionID, &se.CanaryPct); err != nil {
+		return nil, fmt.Errorf("SetCanary scan: %w", err)
+	}
+	return &se, nil
+}
+
+// ClearCanary removes the canary config from an environment.
+func (s *Store) ClearCanary(ctx context.Context, snippetID, env string) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE snippet_environments
+		 SET canary_version_id = NULL, canary_pct = 0
+		 WHERE snippet_id = $1 AND env = $2`,
+		snippetID, env,
+	)
+	if err != nil {
+		return fmt.Errorf("ClearCanary: %w", err)
+	}
+	return nil
+}
+
 func scanVersion(s scannable) (*models.SnippetVersion, error) {
 	var v models.SnippetVersion
 	if err := s.Scan(

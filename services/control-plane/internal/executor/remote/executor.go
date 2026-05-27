@@ -14,12 +14,20 @@ import (
 	"github.com/runeforge/control-plane/internal/executor"
 )
 
+// egressPolicy mirrors executor.EgressPolicy for JSON serialisation.
+type egressPolicy struct {
+	BlockedCIDRs   []string `json:"blocked_cidrs"`
+	BlockedDomains []string `json:"blocked_domains"`
+}
+
 // runRequest is the JSON body sent to executor containers.
 type runRequest struct {
-	Code        string `json:"code"`
-	Input       string `json:"input"`
-	TimeoutMs   int    `json:"timeout_ms"`
-	MaxMemoryMB int    `json:"max_memory_mb"`
+	Code          string            `json:"code"`
+	Input         string            `json:"input"`
+	TimeoutMs     int               `json:"timeout_ms"`
+	MaxMemoryMB   int               `json:"max_memory_mb"`
+	SecretEnvVars map[string]string `json:"secret_env_vars,omitempty"`
+	EgressPolicy  *egressPolicy     `json:"egress_policy,omitempty"`
 }
 
 // runResponse is the JSON body returned by executor containers.
@@ -52,6 +60,24 @@ func New(bunEndpoint, pythonEndpoint string) *RemoteExecutor {
 	}
 }
 
+// buildRunRequest converts an executor.RunSpec into the wire-format request body.
+func buildRunRequest(spec executor.RunSpec) runRequest {
+	req := runRequest{
+		Code:          spec.Code,
+		Input:         spec.Input,
+		TimeoutMs:     spec.TimeoutMs,
+		MaxMemoryMB:   spec.MaxMemoryMB,
+		SecretEnvVars: spec.SecretEnvVars,
+	}
+	if spec.EgressPolicy != nil {
+		req.EgressPolicy = &egressPolicy{
+			BlockedCIDRs:   spec.EgressPolicy.BlockedCIDRs,
+			BlockedDomains: spec.EgressPolicy.BlockedDomains,
+		}
+	}
+	return req
+}
+
 // Run sends the spec to the appropriate executor container and returns the
 // result. HTTP and JSON errors are surfaced in RunResult.Error.
 func (e *RemoteExecutor) Run(ctx context.Context, spec executor.RunSpec) executor.RunResult {
@@ -60,12 +86,7 @@ func (e *RemoteExecutor) Run(ctx context.Context, spec executor.RunSpec) executo
 		return executor.RunResult{Error: err.Error(), ExitCode: -1}
 	}
 
-	reqBody, err := json.Marshal(runRequest{
-		Code:        spec.Code,
-		Input:       spec.Input,
-		TimeoutMs:   spec.TimeoutMs,
-		MaxMemoryMB: spec.MaxMemoryMB,
-	})
+	reqBody, err := json.Marshal(buildRunRequest(spec))
 	if err != nil {
 		return executor.RunResult{Error: fmt.Sprintf("marshal request: %v", err), ExitCode: -1}
 	}
@@ -120,12 +141,7 @@ func (e *RemoteExecutor) RunStream(ctx context.Context, spec executor.RunSpec) (
 		return nil, err
 	}
 
-	reqBody, err := json.Marshal(runRequest{
-		Code:        spec.Code,
-		Input:       spec.Input,
-		TimeoutMs:   spec.TimeoutMs,
-		MaxMemoryMB: spec.MaxMemoryMB,
-	})
+	reqBody, err := json.Marshal(buildRunRequest(spec))
 	if err != nil {
 		return nil, fmt.Errorf("runstream marshal request: %w", err)
 	}

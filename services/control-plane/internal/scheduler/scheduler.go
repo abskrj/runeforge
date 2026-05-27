@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"fmt"
+	"math/rand"
 
 	"github.com/runeforge/control-plane/internal/executor"
 	"github.com/runeforge/control-plane/internal/models"
@@ -20,6 +21,8 @@ type Store interface {
 	CreateInvocationWithMode(ctx context.Context, snippetID, versionID, environment, tenantID, inputPayload, invokeMode, callbackURL string, status models.InvocationStatus) (*models.Invocation, error)
 	UpdateInvocationResult(ctx context.Context, id string, status models.InvocationStatus, output, errMsg, stderr string, durationMs, peakMemoryMB int) error
 	GetInvocation(ctx context.Context, id string) (*models.Invocation, error)
+	GetSecretsForInvocation(ctx context.Context, tenantID, snippetID, env string, encKey []byte) (map[string]string, error)
+	GetTenantByID(ctx context.Context, id string) (*models.Tenant, error)
 }
 
 // Queue is the subset of *redisstore.Client used by the Scheduler for async jobs.
@@ -31,7 +34,7 @@ type Queue interface {
 type InvokeRequest struct {
 	TenantID      string
 	SnippetSlug   string
-	Env           string // "dev" | "prod"
+	Env           string // "dev" | "staging" | "prod"
 	Input         string // raw JSON
 	PinnedVersion int    // 0 = use active version from environment
 }
@@ -40,22 +43,24 @@ type InvokeRequest struct {
 type Scheduler struct {
 	store    Store
 	executor executor.Executor
-	queue    Queue // nil in sync-only mode
+	queue    Queue  // nil in sync-only mode
+	encKey   []byte // for secret decryption
 }
 
 // New creates a Scheduler wired to the given store and executor (sync only, no queue).
-func New(store Store, exec executor.Executor) *Scheduler {
-	return &Scheduler{store: store, executor: exec}
+func New(store Store, exec executor.Executor, encKey []byte) *Scheduler {
+	return &Scheduler{store: store, executor: exec, encKey: encKey}
 }
 
 // NewWithQueue creates a Scheduler with an async job queue.
-func NewWithQueue(store Store, exec executor.Executor, q Queue) *Scheduler {
-	return &Scheduler{store: store, executor: exec, queue: q}
+func NewWithQueue(store Store, exec executor.Executor, q Queue, encKey []byte) *Scheduler {
+	return &Scheduler{store: store, executor: exec, queue: q, encKey: encKey}
 }
 
 // resolveVersion resolves the snippet and version for a request.
 // If req.PinnedVersion > 0, fetches that specific version number.
-// Otherwise uses the active version from the snippet environment.
+// Otherwise uses the active version from the snippet environment, applying
+// canary routing when configured.
 func (s *Scheduler) resolveVersion(ctx context.Context, req InvokeRequest) (*models.Snippet, *models.SnippetVersion, error) {
 	snippet, err := s.store.GetSnippetBySlug(ctx, req.TenantID, req.SnippetSlug)
 	if err != nil {
@@ -84,6 +89,18 @@ func (s *Scheduler) resolveVersion(ctx context.Context, req InvokeRequest) (*mod
 		return nil, nil, fmt.Errorf("get version: %w", err)
 	}
 
+	// Apply canary routing: if a canary version is configured and the random
+	// roll falls within the canary percentage, route to the canary version.
+	if env.CanaryVersionID != nil && env.CanaryPct > 0 {
+		if rand.Intn(100) < env.CanaryPct { //nolint:gosec
+			canaryVersion, err := s.store.GetVersion(ctx, *env.CanaryVersionID)
+			if err != nil {
+				return nil, nil, fmt.Errorf("get canary version: %w", err)
+			}
+			version = canaryVersion
+		}
+	}
+
 	return snippet, version, nil
 }
 
@@ -109,11 +126,20 @@ func mapResultStatus(result executor.RunResult) models.InvocationStatus {
 	return models.InvocationCompleted
 }
 
+// buildEgressPolicy converts a models.EgressPolicy to an executor.EgressPolicy.
+func buildEgressPolicy(p models.EgressPolicy) *executor.EgressPolicy {
+	return &executor.EgressPolicy{
+		BlockedCIDRs:   p.BlockedCIDRs,
+		BlockedDomains: p.BlockedDomains,
+	}
+}
+
 // Invoke executes a snippet synchronously:
-//  1. Resolve the snippet and version (active or pinned).
-//  2. Create an invocation record (status=running).
-//  3. Call the executor.
-//  4. Persist the result and return the completed invocation.
+//  1. Resolve the snippet and version (active, canary, or pinned).
+//  2. Fetch secrets and tenant egress policy.
+//  3. Create an invocation record (status=running).
+//  4. Call the executor.
+//  5. Persist the result and return the completed invocation.
 func (s *Scheduler) Invoke(ctx context.Context, req InvokeRequest) (*models.Invocation, error) {
 	snippet, version, err := s.resolveVersion(ctx, req)
 	if err != nil {
@@ -122,17 +148,29 @@ func (s *Scheduler) Invoke(ctx context.Context, req InvokeRequest) (*models.Invo
 
 	input := normaliseInput(req.Input)
 
+	secrets, err := s.store.GetSecretsForInvocation(ctx, req.TenantID, snippet.ID, req.Env, s.encKey)
+	if err != nil {
+		return nil, fmt.Errorf("fetch secrets: %w", err)
+	}
+
+	tenant, err := s.store.GetTenantByID(ctx, req.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("fetch tenant: %w", err)
+	}
+
 	invocation, err := s.store.CreateInvocation(ctx, snippet.ID, version.ID, req.Env, req.TenantID, input)
 	if err != nil {
 		return nil, fmt.Errorf("create invocation: %w", err)
 	}
 
 	result := s.executor.Run(ctx, executor.RunSpec{
-		Language:    string(snippet.Language),
-		Code:        version.Code,
-		Input:       input,
-		TimeoutMs:   version.TimeoutMs,
-		MaxMemoryMB: version.MaxMemoryMB,
+		Language:      string(snippet.Language),
+		Code:          version.Code,
+		Input:         input,
+		TimeoutMs:     version.TimeoutMs,
+		MaxMemoryMB:   version.MaxMemoryMB,
+		SecretEnvVars: secrets,
+		EgressPolicy:  buildEgressPolicy(tenant.EgressPolicy),
 	})
 
 	status := mapResultStatus(result)
@@ -178,6 +216,16 @@ func (s *Scheduler) InvokeAsync(ctx context.Context, req InvokeRequest, callback
 
 	input := normaliseInput(req.Input)
 
+	secrets, err := s.store.GetSecretsForInvocation(ctx, req.TenantID, snippet.ID, req.Env, s.encKey)
+	if err != nil {
+		return nil, fmt.Errorf("fetch secrets: %w", err)
+	}
+
+	tenant, err := s.store.GetTenantByID(ctx, req.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("fetch tenant: %w", err)
+	}
+
 	invocation, err := s.store.CreateInvocationWithMode(
 		ctx,
 		snippet.ID, version.ID, req.Env, req.TenantID, input,
@@ -188,18 +236,28 @@ func (s *Scheduler) InvokeAsync(ctx context.Context, req InvokeRequest, callback
 		return nil, fmt.Errorf("create invocation: %w", err)
 	}
 
+	var jobEgress *redisstore.EgressPolicyJob
+	if ep := tenant.EgressPolicy; len(ep.BlockedCIDRs) > 0 || len(ep.BlockedDomains) > 0 {
+		jobEgress = &redisstore.EgressPolicyJob{
+			BlockedCIDRs:   ep.BlockedCIDRs,
+			BlockedDomains: ep.BlockedDomains,
+		}
+	}
+
 	job := redisstore.Job{
-		InvocationID: invocation.ID,
-		SnippetID:    snippet.ID,
-		VersionID:    version.ID,
-		TenantID:     req.TenantID,
-		Language:     string(snippet.Language),
-		Code:         version.Code,
-		Input:        input,
-		TimeoutMs:    version.TimeoutMs,
-		MaxMemoryMB:  version.MaxMemoryMB,
-		CallbackURL:  callbackURL,
-		Env:          req.Env,
+		InvocationID:  invocation.ID,
+		SnippetID:     snippet.ID,
+		VersionID:     version.ID,
+		TenantID:      req.TenantID,
+		Language:      string(snippet.Language),
+		Code:          version.Code,
+		Input:         input,
+		TimeoutMs:     version.TimeoutMs,
+		MaxMemoryMB:   version.MaxMemoryMB,
+		CallbackURL:   callbackURL,
+		Env:           req.Env,
+		SecretEnvVars: secrets,
+		EgressPolicy:  jobEgress,
 	}
 
 	if err := s.queue.Enqueue(ctx, job); err != nil {
@@ -219,6 +277,16 @@ func (s *Scheduler) InvokeStream(ctx context.Context, req InvokeRequest) (<-chan
 
 	input := normaliseInput(req.Input)
 
+	secrets, err := s.store.GetSecretsForInvocation(ctx, req.TenantID, snippet.ID, req.Env, s.encKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("fetch secrets: %w", err)
+	}
+
+	tenant, err := s.store.GetTenantByID(ctx, req.TenantID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("fetch tenant: %w", err)
+	}
+
 	invocation, err := s.store.CreateInvocationWithMode(
 		ctx,
 		snippet.ID, version.ID, req.Env, req.TenantID, input,
@@ -230,11 +298,13 @@ func (s *Scheduler) InvokeStream(ctx context.Context, req InvokeRequest) (<-chan
 	}
 
 	ch, err := s.executor.RunStream(ctx, executor.RunSpec{
-		Language:    string(snippet.Language),
-		Code:        version.Code,
-		Input:       input,
-		TimeoutMs:   version.TimeoutMs,
-		MaxMemoryMB: version.MaxMemoryMB,
+		Language:      string(snippet.Language),
+		Code:          version.Code,
+		Input:         input,
+		TimeoutMs:     version.TimeoutMs,
+		MaxMemoryMB:   version.MaxMemoryMB,
+		SecretEnvVars: secrets,
+		EgressPolicy:  buildEgressPolicy(tenant.EgressPolicy),
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("run stream: %w", err)

@@ -25,6 +25,9 @@ import (
 	"go.uber.org/zap"
 )
 
+// testEncKey is a fixed 32-byte AES key used in all API tests.
+var testEncKey = make([]byte, 32)
+
 // --- Test harness ---
 
 type testEnv struct {
@@ -61,9 +64,9 @@ func setup(t *testing.T) *testEnv {
 	t.Cleanup(mockExec.Close)
 
 	exec := remote.New(mockExec.URL, mockExec.URL)
-	sched := scheduler.New(store, exec)
+	sched := scheduler.New(store, exec, testEncKey)
 	log := zap.NewNop()
-	router := api.NewRouter(store, sched, log)
+	router := api.NewRouter(store, sched, log, testEncKey)
 
 	// Bootstrap tenant.
 	slug := fmt.Sprintf("test-%d", time.Now().UnixNano())
@@ -302,11 +305,11 @@ func TestCreateVersion(t *testing.T) {
 	snippetID := createTestSnippet(t, env)
 
 	rec := env.do(t, http.MethodPost, "/v1/snippets/"+snippetID+"/versions", env.manageKey, map[string]any{
-		"code":           "export async function handler() { return {ok: true} }",
-		"input_schema":   "{}",
-		"output_schema":  "{}",
-		"timeout_ms":     5000,
-		"max_memory_mb":  128,
+		"code":            "export async function handler() { return {ok: true} }",
+		"input_schema":    "{}",
+		"output_schema":   "{}",
+		"timeout_ms":      5000,
+		"max_memory_mb":   128,
 		"max_cpu_percent": 100,
 	})
 	if rec.Code != http.StatusCreated {
@@ -608,9 +611,9 @@ func setupWithStreaming(t *testing.T) *testEnv {
 	t.Cleanup(mockExec.Close)
 
 	exec := remote.New(mockExec.URL, mockExec.URL)
-	sched := scheduler.New(store, exec)
+	sched := scheduler.New(store, exec, testEncKey)
 	log := zap.NewNop()
-	router := api.NewRouter(store, sched, log)
+	router := api.NewRouter(store, sched, log, testEncKey)
 
 	slug := fmt.Sprintf("test-stream-%d", time.Now().UnixNano())
 	tenant, err := store.CreateTenant(context.Background(), "Stream Tenant", slug)
@@ -674,9 +677,9 @@ func setupWithRedis(t *testing.T) (*testEnv, *redisstore.Client) {
 	t.Cleanup(mockExec.Close)
 
 	exec := remote.New(mockExec.URL, mockExec.URL)
-	sched := scheduler.NewWithQueue(store, exec, rc)
+	sched := scheduler.NewWithQueue(store, exec, rc, testEncKey)
 	log := zap.NewNop()
-	router := api.NewRouter(store, sched, log)
+	router := api.NewRouter(store, sched, log, testEncKey)
 
 	slug := fmt.Sprintf("test-async-%d", time.Now().UnixNano())
 	tenant, err := store.CreateTenant(context.Background(), "Async Tenant", slug)
@@ -863,5 +866,234 @@ func TestInvoke_StreamMode(t *testing.T) {
 	}
 	if done, _ := chunk["done"].(bool); !done {
 		t.Errorf("last SSE event done = %v; want true. event: %s", done, lastEvent)
+	}
+}
+
+// --- Phase 3: Secrets ---
+
+func TestCreateSecret(t *testing.T) {
+	env := setup(t)
+
+	rec := env.do(t, http.MethodPost, "/v1/secrets", env.manageKey, map[string]any{
+		"name":         "MY_API_KEY",
+		"value":        "super-secret-value",
+		"environments": []string{"prod"},
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d; want 201\nbody: %s", rec.Code, rec.Body.String())
+	}
+
+	body := decodeJSON(t, rec)
+	if body["id"] == "" {
+		t.Error("id must be set")
+	}
+	if body["name"] != "MY_API_KEY" {
+		t.Errorf("name = %q; want %q", body["name"], "MY_API_KEY")
+	}
+	// Value must never appear in the response.
+	if _, ok := body["value"]; ok {
+		t.Error("value must not appear in response")
+	}
+	if _, ok := body["value_encrypted"]; ok {
+		t.Error("value_encrypted must not appear in response")
+	}
+}
+
+func TestListSecrets(t *testing.T) {
+	env := setup(t)
+
+	// Create two secrets.
+	env.do(t, http.MethodPost, "/v1/secrets", env.manageKey, map[string]any{
+		"name": "SECRET_A", "value": "val-a",
+	})
+	env.do(t, http.MethodPost, "/v1/secrets", env.manageKey, map[string]any{
+		"name": "SECRET_B", "value": "val-b",
+	})
+
+	rec := env.do(t, http.MethodGet, "/v1/secrets", env.manageKey, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; want 200", rec.Code)
+	}
+
+	var secrets []map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&secrets); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(secrets) < 2 {
+		t.Errorf("expected at least 2 secrets, got %d", len(secrets))
+	}
+
+	// Values must never appear.
+	for _, s := range secrets {
+		if _, ok := s["value"]; ok {
+			t.Error("value must not appear in list response")
+		}
+		if _, ok := s["value_encrypted"]; ok {
+			t.Error("value_encrypted must not appear in list response")
+		}
+	}
+}
+
+func TestDeleteSecret(t *testing.T) {
+	env := setup(t)
+
+	// Create a secret.
+	recCreate := env.do(t, http.MethodPost, "/v1/secrets", env.manageKey, map[string]any{
+		"name": "TO_DELETE", "value": "delete-me",
+	})
+	if recCreate.Code != http.StatusCreated {
+		t.Fatalf("create: %d", recCreate.Code)
+	}
+	secretID := decodeJSON(t, recCreate)["id"].(string)
+
+	// Delete it.
+	recDel := env.do(t, http.MethodDelete, "/v1/secrets/"+secretID, env.manageKey, nil)
+	if recDel.Code != http.StatusNoContent {
+		t.Fatalf("delete: %d; want 204\nbody: %s", recDel.Code, recDel.Body.String())
+	}
+
+	// Verify gone from list.
+	recList := env.do(t, http.MethodGet, "/v1/secrets", env.manageKey, nil)
+	var secrets []map[string]any
+	_ = json.NewDecoder(recList.Body).Decode(&secrets)
+	for _, s := range secrets {
+		if s["id"] == secretID {
+			t.Error("deleted secret still appears in list")
+		}
+	}
+}
+
+// --- Phase 3: Canary ---
+
+func TestSetCanary(t *testing.T) {
+	env := setup(t)
+	snippetID := createTestSnippet(t, env)
+
+	// Create and publish version 1.
+	recV1 := env.do(t, http.MethodPost, "/v1/snippets/"+snippetID+"/versions", env.manageKey, map[string]any{
+		"code": "// v1",
+	})
+	v1Body := decodeJSON(t, recV1)
+	v1Num := int(v1Body["version_number"].(float64))
+	v1ID := v1Body["id"].(string)
+	env.do(t, http.MethodPost,
+		fmt.Sprintf("/v1/snippets/%s/versions/%d/publish?env=prod", snippetID, v1Num),
+		env.manageKey, nil)
+
+	// Create version 2 (canary candidate).
+	recV2 := env.do(t, http.MethodPost, "/v1/snippets/"+snippetID+"/versions", env.manageKey, map[string]any{
+		"code": "// v2",
+	})
+	v2Body := decodeJSON(t, recV2)
+	v2ID := v2Body["id"].(string)
+
+	_ = v1ID // used for context
+
+	// Set canary.
+	recCanary := env.do(t, http.MethodPost,
+		"/v1/snippets/"+snippetID+"/canary?env=prod",
+		env.manageKey,
+		map[string]any{
+			"version_id": v2ID,
+			"percent":    25,
+		},
+	)
+	if recCanary.Code != http.StatusOK {
+		t.Fatalf("SetCanary status = %d; want 200\nbody: %s", recCanary.Code, recCanary.Body.String())
+	}
+
+	canaryBody := decodeJSON(t, recCanary)
+	if canaryBody["canary_version_id"] != v2ID {
+		t.Errorf("canary_version_id = %v; want %q", canaryBody["canary_version_id"], v2ID)
+	}
+	if int(canaryBody["canary_pct"].(float64)) != 25 {
+		t.Errorf("canary_pct = %v; want 25", canaryBody["canary_pct"])
+	}
+}
+
+func TestClearCanary(t *testing.T) {
+	env := setup(t)
+	snippetID := createTestSnippet(t, env)
+
+	// Create and publish v1.
+	recV1 := env.do(t, http.MethodPost, "/v1/snippets/"+snippetID+"/versions", env.manageKey, map[string]any{
+		"code": "// v1",
+	})
+	v1Body := decodeJSON(t, recV1)
+	v1Num := int(v1Body["version_number"].(float64))
+	env.do(t, http.MethodPost,
+		fmt.Sprintf("/v1/snippets/%s/versions/%d/publish?env=prod", snippetID, v1Num),
+		env.manageKey, nil)
+
+	// Create v2 and set as canary.
+	recV2 := env.do(t, http.MethodPost, "/v1/snippets/"+snippetID+"/versions", env.manageKey, map[string]any{
+		"code": "// v2",
+	})
+	v2ID := decodeJSON(t, recV2)["id"].(string)
+
+	env.do(t, http.MethodPost, "/v1/snippets/"+snippetID+"/canary?env=prod", env.manageKey,
+		map[string]any{"version_id": v2ID, "percent": 50})
+
+	// Clear canary.
+	recClear := env.do(t, http.MethodDelete,
+		"/v1/snippets/"+snippetID+"/canary?env=prod",
+		env.manageKey, nil)
+	if recClear.Code != http.StatusNoContent {
+		t.Fatalf("ClearCanary status = %d; want 204\nbody: %s", recClear.Code, recClear.Body.String())
+	}
+}
+
+// --- Phase 3: Egress policy ---
+
+func TestUpdateEgressPolicy(t *testing.T) {
+	env := setup(t)
+
+	// GET current policy.
+	recGet := env.do(t, http.MethodGet,
+		"/v1/tenants/"+env.tenant.Slug+"/egress",
+		env.manageKey, nil)
+	if recGet.Code != http.StatusOK {
+		t.Fatalf("GET egress status = %d; want 200\nbody: %s", recGet.Code, recGet.Body.String())
+	}
+	getBody := decodeJSON(t, recGet)
+	// Default policy should have blocked_cidrs.
+	if _, ok := getBody["blocked_cidrs"]; !ok {
+		t.Error("default policy should have blocked_cidrs field")
+	}
+
+	// PUT a new policy.
+	recPut := env.do(t, http.MethodPut,
+		"/v1/tenants/"+env.tenant.Slug+"/egress",
+		env.manageKey,
+		map[string]any{
+			"blocked_cidrs":   []string{"192.168.1.0/24"},
+			"blocked_domains": []string{"evil.example.com"},
+		},
+	)
+	if recPut.Code != http.StatusOK {
+		t.Fatalf("PUT egress status = %d; want 200\nbody: %s", recPut.Code, recPut.Body.String())
+	}
+
+	putBody := decodeJSON(t, recPut)
+	cidrs, _ := putBody["blocked_cidrs"].([]any)
+	if len(cidrs) != 1 || cidrs[0] != "192.168.1.0/24" {
+		t.Errorf("blocked_cidrs = %v; want [192.168.1.0/24]", cidrs)
+	}
+	domains, _ := putBody["blocked_domains"].([]any)
+	if len(domains) != 1 || domains[0] != "evil.example.com" {
+		t.Errorf("blocked_domains = %v; want [evil.example.com]", domains)
+	}
+
+	// GET again and verify persistence.
+	recGet2 := env.do(t, http.MethodGet,
+		"/v1/tenants/"+env.tenant.Slug+"/egress",
+		env.manageKey, nil)
+	if recGet2.Code != http.StatusOK {
+		t.Fatalf("GET egress after update status = %d", recGet2.Code)
+	}
+	getBody2 := decodeJSON(t, recGet2)
+	cidrs2, _ := getBody2["blocked_cidrs"].([]any)
+	if len(cidrs2) != 1 || cidrs2[0] != "192.168.1.0/24" {
+		t.Errorf("persisted blocked_cidrs = %v; want [192.168.1.0/24]", cidrs2)
 	}
 }

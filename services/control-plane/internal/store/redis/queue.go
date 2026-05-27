@@ -11,19 +11,27 @@ import (
 
 const jobQueueKey = "runeforge:jobs"
 
+// EgressPolicyJob carries egress policy in an enqueued job.
+type EgressPolicyJob struct {
+	BlockedCIDRs   []string `json:"blocked_cidrs"`
+	BlockedDomains []string `json:"blocked_domains"`
+}
+
 // Job is the unit of async work pushed to Redis.
 type Job struct {
-	InvocationID string `json:"invocation_id"`
-	SnippetID    string `json:"snippet_id"`
-	VersionID    string `json:"version_id"`
-	TenantID     string `json:"tenant_id"`
-	Language     string `json:"language"`
-	Code         string `json:"code"`
-	Input        string `json:"input"`
-	TimeoutMs    int    `json:"timeout_ms"`
-	MaxMemoryMB  int    `json:"max_memory_mb"`
-	CallbackURL  string `json:"callback_url,omitempty"`
-	Env          string `json:"env"`
+	InvocationID  string            `json:"invocation_id"`
+	SnippetID     string            `json:"snippet_id"`
+	VersionID     string            `json:"version_id"`
+	TenantID      string            `json:"tenant_id"`
+	Language      string            `json:"language"`
+	Code          string            `json:"code"`
+	Input         string            `json:"input"`
+	TimeoutMs     int               `json:"timeout_ms"`
+	MaxMemoryMB   int               `json:"max_memory_mb"`
+	CallbackURL   string            `json:"callback_url,omitempty"`
+	Env           string            `json:"env"`
+	SecretEnvVars map[string]string `json:"secret_env_vars,omitempty"`
+	EgressPolicy  *EgressPolicyJob  `json:"egress_policy,omitempty"`
 }
 
 // Enqueue serialises job as JSON and pushes it to the left of the job list.

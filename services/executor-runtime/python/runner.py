@@ -7,7 +7,8 @@ subprocess with the input payload available as SNIPPET_INPUT, captures
 stdout/stderr, enforces a timeout via asyncio, and returns a structured result.
 
 Expected request body:
-    { code: str, input: str, timeout_ms: int, max_memory_mb: int }
+    { code: str, input: str, timeout_ms: int, max_memory_mb: int,
+      secret_env_vars?: dict, egress_policy?: EgressPolicy }
 
 POST /run response body:
     { output: str, stderr: str, duration_ms: int, peak_memory_mb: int,
@@ -53,7 +54,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, AsyncGenerator
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -66,11 +67,18 @@ app = FastAPI(title="runeforge-python-executor")
 # ---------------------------------------------------------------------------
 
 
+class EgressPolicy(BaseModel):
+    blocked_cidrs: List[str] = []
+    blocked_domains: List[str] = []
+
+
 class RunRequest(BaseModel):
     code: str
     input: str = "{}"
     timeout_ms: int = 30_000
     max_memory_mb: int = 128
+    secret_env_vars: Dict[str, str] = {}
+    egress_policy: Optional[EgressPolicy] = None
 
 
 class RunResult(BaseModel):
@@ -91,11 +99,55 @@ import asyncio
 import json
 import os
 import sys
+import urllib.request
 
 # Add the temp directory to the import path so we can import the snippet.
 sys.path.insert(0, {snippet_dir!r})
 
 import snippet as _snippet
+
+# ---------------------------------------------------------------------------
+# Egress policy enforcement: patch urllib to block disallowed domains.
+# ---------------------------------------------------------------------------
+_blocked_domains = {blocked_domains!r}
+
+if _blocked_domains:
+    _original_urlopen = urllib.request.urlopen
+
+    def _checked_urlopen(url, *args, **kwargs):
+        from urllib.parse import urlparse
+        raw = url if isinstance(url, str) else url.full_url
+        hostname = urlparse(raw).hostname or ""
+        for domain in _blocked_domains:
+            if hostname == domain or hostname.endswith("." + domain):
+                raise OSError("Egress blocked: " + hostname + " is in the domain blocklist")
+        return _original_urlopen(url, *args, **kwargs)
+
+    urllib.request.urlopen = _checked_urlopen
+
+    try:
+        import httpx
+        _orig_httpx_send = httpx.Client.send
+        _orig_httpx_async_send = httpx.AsyncClient.send
+
+        def _checked_httpx_send(self, request, *args, **kwargs):
+            hostname = request.url.host
+            for domain in _blocked_domains:
+                if hostname == domain or hostname.endswith("." + domain):
+                    raise OSError("Egress blocked: " + hostname + " is in the domain blocklist")
+            return _orig_httpx_send(self, request, *args, **kwargs)
+
+        async def _checked_httpx_async_send(self, request, *args, **kwargs):
+            hostname = request.url.host
+            for domain in _blocked_domains:
+                if hostname == domain or hostname.endswith("." + domain):
+                    raise OSError("Egress blocked: " + hostname + " is in the domain blocklist")
+            return await _orig_httpx_async_send(self, request, *args, **kwargs)
+
+        httpx.Client.send = _checked_httpx_send
+        httpx.AsyncClient.send = _checked_httpx_async_send
+    except ImportError:
+        pass  # httpx not installed; no-op
 
 async def _main():
     raw = os.environ.get("SNIPPET_INPUT", "{{}}")
@@ -153,10 +205,54 @@ import inspect
 import json
 import os
 import sys
+import urllib.request
 
 sys.path.insert(0, {snippet_dir!r})
 
 import snippet as _snippet
+
+# ---------------------------------------------------------------------------
+# Egress policy enforcement: patch urllib to block disallowed domains.
+# ---------------------------------------------------------------------------
+_blocked_domains = {blocked_domains!r}
+
+if _blocked_domains:
+    _original_urlopen = urllib.request.urlopen
+
+    def _checked_urlopen(url, *args, **kwargs):
+        from urllib.parse import urlparse
+        raw = url if isinstance(url, str) else url.full_url
+        hostname = urlparse(raw).hostname or ""
+        for domain in _blocked_domains:
+            if hostname == domain or hostname.endswith("." + domain):
+                raise OSError("Egress blocked: " + hostname + " is in the domain blocklist")
+        return _original_urlopen(url, *args, **kwargs)
+
+    urllib.request.urlopen = _checked_urlopen
+
+    try:
+        import httpx
+        _orig_httpx_send = httpx.Client.send
+        _orig_httpx_async_send = httpx.AsyncClient.send
+
+        def _checked_httpx_send(self, request, *args, **kwargs):
+            hostname = request.url.host
+            for domain in _blocked_domains:
+                if hostname == domain or hostname.endswith("." + domain):
+                    raise OSError("Egress blocked: " + hostname + " is in the domain blocklist")
+            return _orig_httpx_send(self, request, *args, **kwargs)
+
+        async def _checked_httpx_async_send(self, request, *args, **kwargs):
+            hostname = request.url.host
+            for domain in _blocked_domains:
+                if hostname == domain or hostname.endswith("." + domain):
+                    raise OSError("Egress blocked: " + hostname + " is in the domain blocklist")
+            return await _orig_httpx_async_send(self, request, *args, **kwargs)
+
+        httpx.Client.send = _checked_httpx_send
+        httpx.AsyncClient.send = _checked_httpx_async_send
+    except ImportError:
+        pass  # httpx not installed; no-op
 
 async def _main():
     raw = os.environ.get("SNIPPET_INPUT", "{{}}")
@@ -222,6 +318,11 @@ async def run_snippet(req: RunRequest) -> RunResult:
 
     timeout_sec = max(req.timeout_ms / 1000.0, 1.0)
 
+    # Build blocked_domains list for harness injection.
+    blocked_domains: list[str] = []
+    if req.egress_policy is not None:
+        blocked_domains = req.egress_policy.blocked_domains
+
     # Use a temporary directory so both snippet.py and harness.py coexist.
     with tempfile.TemporaryDirectory(prefix="rune_") as work_dir:
         snippet_path = Path(work_dir) / "snippet.py"
@@ -229,12 +330,16 @@ async def run_snippet(req: RunRequest) -> RunResult:
 
         snippet_path.write_text(req.code, encoding="utf-8")
         harness_path.write_text(
-            HARNESS_TEMPLATE.format(snippet_dir=work_dir),
+            HARNESS_TEMPLATE.format(snippet_dir=work_dir, blocked_domains=blocked_domains),
             encoding="utf-8",
         )
 
         env = os.environ.copy()
         env["SNIPPET_INPUT"] = req.input
+
+        # Inject secret env vars into subprocess environment.
+        for key, val in req.secret_env_vars.items():
+            env[key] = val
 
         start = time.monotonic()
 
@@ -308,18 +413,27 @@ async def run_snippet_stream(req: RunRequest) -> AsyncGenerator[str, None]:
     """
     timeout_sec = max(req.timeout_ms / 1000.0, 1.0)
 
+    # Build blocked_domains list for harness injection.
+    blocked_domains: list[str] = []
+    if req.egress_policy is not None:
+        blocked_domains = req.egress_policy.blocked_domains
+
     with tempfile.TemporaryDirectory(prefix="rune_stream_") as work_dir:
         snippet_path = Path(work_dir) / "snippet.py"
         harness_path = Path(work_dir) / "harness.py"
 
         snippet_path.write_text(req.code, encoding="utf-8")
         harness_path.write_text(
-            STREAM_HARNESS_TEMPLATE.format(snippet_dir=work_dir),
+            STREAM_HARNESS_TEMPLATE.format(snippet_dir=work_dir, blocked_domains=blocked_domains),
             encoding="utf-8",
         )
 
         env = os.environ.copy()
         env["SNIPPET_INPUT"] = req.input
+
+        # Inject secret env vars into subprocess environment.
+        for key, val in req.secret_env_vars.items():
+            env[key] = val
 
         try:
             proc = await asyncio.create_subprocess_exec(

@@ -96,13 +96,23 @@ func (w *Worker) process(ctx context.Context, workerID int, job *redisstore.Job)
 		zap.String("language", job.Language),
 	)
 
-	result := w.exec.Run(ctx, executor.RunSpec{
-		Language:    job.Language,
-		Code:        job.Code,
-		Input:       job.Input,
-		TimeoutMs:   job.TimeoutMs,
-		MaxMemoryMB: job.MaxMemoryMB,
-	})
+	spec := executor.RunSpec{
+		Language:      job.Language,
+		Code:          job.Code,
+		Input:         job.Input,
+		TimeoutMs:     job.TimeoutMs,
+		MaxMemoryMB:   job.MaxMemoryMB,
+		SecretEnvVars: job.SecretEnvVars,
+	}
+
+	if job.EgressPolicy != nil {
+		spec.EgressPolicy = &executor.EgressPolicy{
+			BlockedCIDRs:   job.EgressPolicy.BlockedCIDRs,
+			BlockedDomains: job.EgressPolicy.BlockedDomains,
+		}
+	}
+
+	result := w.exec.Run(ctx, spec)
 
 	status := mapResultStatus(result)
 

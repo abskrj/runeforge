@@ -22,6 +22,11 @@ func NewVersionsHandler(store *postgres.Store, log *zap.Logger) *VersionsHandler
 	return &VersionsHandler{store: store, log: log}
 }
 
+// isValidEnv returns true if env is one of the permitted values.
+func isValidEnv(env string) bool {
+	return env == "dev" || env == "staging" || env == "prod"
+}
+
 // ListVersions handles GET /v1/snippets/{snippetID}/versions.
 func (h *VersionsHandler) ListVersions(w http.ResponseWriter, r *http.Request) {
 	tenant := middleware.TenantFromContext(r.Context())
@@ -154,7 +159,7 @@ func (h *VersionsHandler) GetVersion(w http.ResponseWriter, r *http.Request) {
 }
 
 // PublishVersion handles POST /v1/snippets/{snippetID}/versions/{num}/publish.
-// Query param: ?env=dev|prod (default: prod).
+// Query param: ?env=dev|staging|prod (default: prod).
 func (h *VersionsHandler) PublishVersion(w http.ResponseWriter, r *http.Request) {
 	tenant := middleware.TenantFromContext(r.Context())
 	if tenant == nil {
@@ -169,8 +174,8 @@ func (h *VersionsHandler) PublishVersion(w http.ResponseWriter, r *http.Request)
 	if env == "" {
 		env = "prod"
 	}
-	if env != "dev" && env != "prod" {
-		writeError(w, http.StatusBadRequest, "env must be 'dev' or 'prod'")
+	if !isValidEnv(env) {
+		writeError(w, http.StatusBadRequest, "env must be 'dev', 'staging', or 'prod'")
 		return
 	}
 
@@ -200,4 +205,96 @@ func (h *VersionsHandler) PublishVersion(w http.ResponseWriter, r *http.Request)
 	}
 
 	writeJSON(w, http.StatusOK, published)
+}
+
+// setCanaryRequest is the expected POST body for canary configuration.
+type setCanaryRequest struct {
+	VersionID string `json:"version_id"`
+	Percent   int    `json:"percent"`
+}
+
+// SetCanary handles POST /v1/snippets/{snippetID}/canary.
+// Body: { version_id: string, percent: int (0-100) }
+func (h *VersionsHandler) SetCanary(w http.ResponseWriter, r *http.Request) {
+	tenant := middleware.TenantFromContext(r.Context())
+	if tenant == nil {
+		writeError(w, http.StatusUnauthorized, "unauthenticated")
+		return
+	}
+
+	snippetID := chi.URLParam(r, "snippetID")
+
+	snippet, err := h.store.GetSnippetByID(r.Context(), snippetID)
+	if err != nil || snippet.TenantID != tenant.ID {
+		writeError(w, http.StatusNotFound, "snippet not found")
+		return
+	}
+
+	var req setCanaryRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.VersionID == "" {
+		writeError(w, http.StatusBadRequest, "version_id is required")
+		return
+	}
+	if req.Percent < 0 || req.Percent > 100 {
+		writeError(w, http.StatusBadRequest, "percent must be between 0 and 100")
+		return
+	}
+
+	env := r.URL.Query().Get("env")
+	if env == "" {
+		env = "prod"
+	}
+	if !isValidEnv(env) {
+		writeError(w, http.StatusBadRequest, "env must be 'dev', 'staging', or 'prod'")
+		return
+	}
+
+	se, err := h.store.SetCanary(r.Context(), snippetID, env, req.VersionID, req.Percent)
+	if err != nil {
+		h.log.Error("set canary failed", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "failed to set canary")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, se)
+}
+
+// ClearCanary handles DELETE /v1/snippets/{snippetID}/canary.
+// Query: ?env=prod (default prod)
+func (h *VersionsHandler) ClearCanary(w http.ResponseWriter, r *http.Request) {
+	tenant := middleware.TenantFromContext(r.Context())
+	if tenant == nil {
+		writeError(w, http.StatusUnauthorized, "unauthenticated")
+		return
+	}
+
+	snippetID := chi.URLParam(r, "snippetID")
+
+	snippet, err := h.store.GetSnippetByID(r.Context(), snippetID)
+	if err != nil || snippet.TenantID != tenant.ID {
+		writeError(w, http.StatusNotFound, "snippet not found")
+		return
+	}
+
+	env := r.URL.Query().Get("env")
+	if env == "" {
+		env = "prod"
+	}
+	if !isValidEnv(env) {
+		writeError(w, http.StatusBadRequest, "env must be 'dev', 'staging', or 'prod'")
+		return
+	}
+
+	if err := h.store.ClearCanary(r.Context(), snippetID, env); err != nil {
+		h.log.Error("clear canary failed", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "failed to clear canary")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
