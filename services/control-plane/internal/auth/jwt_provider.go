@@ -11,6 +11,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/runeforge/control-plane/internal/models"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // runeforgeClaims are the JWT claims embedded in access tokens.
@@ -69,14 +70,8 @@ func (p *JWTProvider) Authenticate(ctx context.Context, email, password string) 
 		return nil, fmt.Errorf("invalid credentials")
 	}
 
-	// Delegate password check to the shared helper in PasswordProvider.
-	if _, err := p.passwords.store.GetUserByEmail(ctx, email); err != nil {
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
 		return nil, fmt.Errorf("invalid credentials")
-	}
-
-	// Use the same bcrypt check path as PasswordProvider.
-	if _, err := p.passwords.Authenticate(ctx, email, password); err != nil {
-		return nil, err
 	}
 
 	pair, err := p.issueTokenPair(ctx, user)
