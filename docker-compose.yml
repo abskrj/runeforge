@@ -54,6 +54,8 @@ services:
     ports:
       - "8081:8080"
     restart: unless-stopped
+    security_opt:
+      - seccomp:./services/executor-runtime/seccomp-executor.json
 
   python-executor:
     build:
@@ -61,6 +63,8 @@ services:
     ports:
       - "8082:8080"
     restart: unless-stopped
+    security_opt:
+      - seccomp:./services/executor-runtime/seccomp-executor.json
 
   control-plane:
     build:
@@ -79,6 +83,7 @@ services:
       LOGS_BUCKET: runeforge-logs
       REPLAY_BUCKET: runeforge-replays
       SESSION_DURATION_HOURS: "24"
+      EXECUTOR_TYPE: "process"
     depends_on:
       postgres:
         condition: service_healthy

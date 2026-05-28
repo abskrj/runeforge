@@ -35,6 +35,14 @@ func APIKeyFromContext(ctx context.Context) *models.APIKey {
 	return v
 }
 
+// ExportedTenantKey returns the context key used to store the authenticated tenant.
+// Intended for use in tests that need to inject a tenant into the context.
+func ExportedTenantKey() any { return tenantKey }
+
+// ExportedAPIKeyKey returns the context key used to store the authenticated API key.
+// Intended for use in tests that need to inject an API key into the context.
+func ExportedAPIKeyKey() any { return apikeyKey }
+
 // Auth returns a middleware that validates the Bearer token in the
 // Authorization header and attaches the resolved Tenant and APIKey to the
 // request context. Requests without a valid key receive 401.

@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/runeforge/control-plane/internal/audit"
 	"github.com/runeforge/control-plane/internal/models"
 	"go.uber.org/zap"
 )
@@ -19,13 +20,20 @@ type BrandingStore interface {
 
 // BrandingHandler handles branding config endpoints.
 type BrandingHandler struct {
-	store BrandingStore
-	log   *zap.Logger
+	store   BrandingStore
+	log     *zap.Logger
+	auditor *audit.Logger
 }
 
 // NewBrandingHandler constructs a BrandingHandler.
 func NewBrandingHandler(store BrandingStore, log *zap.Logger) *BrandingHandler {
 	return &BrandingHandler{store: store, log: log}
+}
+
+// WithAuditor attaches an audit logger to the BrandingHandler.
+func (h *BrandingHandler) WithAuditor(a *audit.Logger) *BrandingHandler {
+	h.auditor = a
+	return h
 }
 
 // GetBranding handles GET /v1/tenants/{slug}/branding.
@@ -66,6 +74,17 @@ func (h *BrandingHandler) UpdateBranding(w http.ResponseWriter, r *http.Request)
 		h.log.Error("update branding failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "failed to update branding")
 		return
+	}
+
+	if h.auditor != nil {
+		actorID, actorType := resolveActor(r)
+		h.auditor.Log(r.Context(), models.AuditEntry{
+			TenantID:   tenant.ID,
+			ActorID:    actorID,
+			ActorType:  actorType,
+			Action:     "branding_update",
+			ResourceID: tenant.ID,
+		})
 	}
 
 	writeJSON(w, http.StatusOK, b)

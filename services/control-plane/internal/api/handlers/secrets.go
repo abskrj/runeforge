@@ -6,20 +6,29 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/runeforge/control-plane/internal/api/middleware"
+	"github.com/runeforge/control-plane/internal/audit"
+	"github.com/runeforge/control-plane/internal/models"
 	"github.com/runeforge/control-plane/internal/store/postgres"
 	"go.uber.org/zap"
 )
 
 // SecretsHandler bundles all secret-related HTTP handlers.
 type SecretsHandler struct {
-	store  *postgres.Store
-	log    *zap.Logger
-	encKey []byte
+	store   *postgres.Store
+	log     *zap.Logger
+	encKey  []byte
+	auditor *audit.Logger
 }
 
 // NewSecretsHandler constructs a SecretsHandler.
 func NewSecretsHandler(store *postgres.Store, log *zap.Logger, encKey []byte) *SecretsHandler {
 	return &SecretsHandler{store: store, log: log, encKey: encKey}
+}
+
+// WithAuditor attaches an audit logger to the SecretsHandler.
+func (h *SecretsHandler) WithAuditor(a *audit.Logger) *SecretsHandler {
+	h.auditor = a
+	return h
 }
 
 // createSecretRequest is the expected POST body for secret creation.
@@ -66,6 +75,18 @@ func (h *SecretsHandler) CreateSecret(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.auditor != nil {
+		actorID, actorType := resolveActor(r)
+		h.auditor.Log(r.Context(), models.AuditEntry{
+			TenantID:   tenant.ID,
+			ActorID:    actorID,
+			ActorType:  actorType,
+			Action:     "secret_create",
+			ResourceID: sec.ID,
+			Metadata:   auditMeta(map[string]any{"name": req.Name}),
+		})
+	}
+
 	writeJSON(w, http.StatusCreated, sec)
 }
 
@@ -105,6 +126,17 @@ func (h *SecretsHandler) DeleteSecret(w http.ResponseWriter, r *http.Request) {
 		h.log.Error("delete secret failed", zap.String("id", secretID), zap.Error(err))
 		writeError(w, http.StatusNotFound, "secret not found")
 		return
+	}
+
+	if h.auditor != nil {
+		actorID, actorType := resolveActor(r)
+		h.auditor.Log(r.Context(), models.AuditEntry{
+			TenantID:   tenant.ID,
+			ActorID:    actorID,
+			ActorType:  actorType,
+			Action:     "secret_delete",
+			ResourceID: secretID,
+		})
 	}
 
 	w.WriteHeader(http.StatusNoContent)

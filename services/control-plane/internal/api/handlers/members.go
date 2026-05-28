@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/runeforge/control-plane/internal/audit"
 	"github.com/runeforge/control-plane/internal/models"
 	"go.uber.org/zap"
 )
@@ -25,13 +26,20 @@ type MembersStore interface {
 
 // MembersHandler handles team member and invite endpoints.
 type MembersHandler struct {
-	store MembersStore
-	log   *zap.Logger
+	store   MembersStore
+	log     *zap.Logger
+	auditor *audit.Logger
 }
 
 // NewMembersHandler constructs a MembersHandler.
 func NewMembersHandler(store MembersStore, log *zap.Logger) *MembersHandler {
 	return &MembersHandler{store: store, log: log}
+}
+
+// WithAuditor attaches an audit logger to the MembersHandler.
+func (h *MembersHandler) WithAuditor(a *audit.Logger) *MembersHandler {
+	h.auditor = a
+	return h
 }
 
 // ListMembers handles GET /v1/tenants/{slug}/members.
@@ -90,6 +98,18 @@ func (h *MembersHandler) InviteMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.auditor != nil {
+		actorID, actorType := resolveActor(r)
+		h.auditor.Log(r.Context(), models.AuditEntry{
+			TenantID:   tenant.ID,
+			ActorID:    actorID,
+			ActorType:  actorType,
+			Action:     "member_invite",
+			ResourceID: invite.ID,
+			Metadata:   auditMeta(map[string]any{"email": req.Email, "role": req.Role}),
+		})
+	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"invite_token": rawToken,
 		"expires_at":   invite.ExpiresAt,
@@ -111,6 +131,17 @@ func (h *MembersHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 		h.log.Error("remove member failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "failed to remove member")
 		return
+	}
+
+	if h.auditor != nil {
+		actorID, actorType := resolveActor(r)
+		h.auditor.Log(r.Context(), models.AuditEntry{
+			TenantID:   tenant.ID,
+			ActorID:    actorID,
+			ActorType:  actorType,
+			Action:     "member_remove",
+			ResourceID: userID,
+		})
 	}
 
 	w.WriteHeader(http.StatusNoContent)

@@ -2,9 +2,13 @@ package handlers
 
 import (
 	"context"
+	"crypto/rsa"
 	"crypto/sha256"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"math/big"
 	"net/http"
 	"strings"
 
@@ -27,11 +31,19 @@ type AdminAuthHandler struct {
 	provider auth.Provider
 	store    AdminAuthStore
 	log      *zap.Logger
+	pubKey   *rsa.PublicKey // optional; used for JWKS endpoint
 }
 
 // NewAdminAuthHandler constructs an AdminAuthHandler.
 func NewAdminAuthHandler(provider auth.Provider, store AdminAuthStore, log *zap.Logger) *AdminAuthHandler {
 	return &AdminAuthHandler{provider: provider, store: store, log: log}
+}
+
+// WithPublicKey sets the RSA public key used to serve the JWKS endpoint.
+// Call this when using JWTProvider.
+func (h *AdminAuthHandler) WithPublicKey(pub *rsa.PublicKey) *AdminAuthHandler {
+	h.pubKey = pub
+	return h
 }
 
 type registerRequest struct {
@@ -153,8 +165,83 @@ func (h *AdminAuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, user)
 }
 
+// JWKS handles GET /.well-known/jwks.json.
+// Returns the RS256 public key in JWK Set format so third parties can verify Runeforge JWTs.
+func (h *AdminAuthHandler) JWKS(w http.ResponseWriter, r *http.Request) {
+	if h.pubKey == nil {
+		writeError(w, http.StatusNotFound, "JWKS not available — JWT auth not configured")
+		return
+	}
+
+	// Encode the RSA public key modulus (N) and exponent (E) in base64url without padding.
+	nBytes := h.pubKey.N.Bytes()
+	nB64 := base64.RawURLEncoding.EncodeToString(nBytes)
+
+	eBuf := make([]byte, 4)
+	binary.BigEndian.PutUint32(eBuf, uint32(h.pubKey.E))
+	// Trim leading zero bytes.
+	i := 0
+	for i < len(eBuf)-1 && eBuf[i] == 0 {
+		i++
+	}
+	eB64 := base64.RawURLEncoding.EncodeToString(eBuf[i:])
+
+	jwks := map[string]any{
+		"keys": []map[string]any{
+			{
+				"kty": "RSA",
+				"use": "sig",
+				"alg": "RS256",
+				"kid": "runeforge-1",
+				"n":   nB64,
+				"e":   eB64,
+			},
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(jwks)
+}
+
+type refreshTokenRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+// RefreshToken handles POST /v1/admin/auth/refresh.
+// Body: { "refresh_token": "..." }
+// Returns a new AuthTokenPair. The old refresh token is revoked (rotation).
+func (h *AdminAuthHandler) RefreshToken(w http.ResponseWriter, r *http.Request) {
+	var req refreshTokenRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.RefreshToken == "" {
+		writeError(w, http.StatusBadRequest, "refresh_token is required")
+		return
+	}
+
+	jwtProvider, ok := h.provider.(*auth.JWTProvider)
+	if !ok {
+		writeError(w, http.StatusNotImplemented, "token refresh not supported by current auth provider")
+		return
+	}
+
+	pair, err := jwtProvider.Refresh(r.Context(), req.RefreshToken)
+	if err != nil {
+		h.log.Debug("refresh token failed", zap.Error(err))
+		writeError(w, http.StatusUnauthorized, "invalid or expired refresh token")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, pair)
+}
+
 // hashInviteToken hashes a raw invite token using SHA-256 (same algorithm as auth package).
 func hashInviteToken(raw string) string {
 	h := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(h[:])
 }
+
+// Ensure big.Int is imported via the RSA key operations (used indirectly via N.Bytes()).
+var _ = new(big.Int)

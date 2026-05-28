@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/runeforge/control-plane/internal/api/middleware"
+	"github.com/runeforge/control-plane/internal/audit"
 	"github.com/runeforge/control-plane/internal/models"
 	"github.com/runeforge/control-plane/internal/store/postgres"
 	"go.uber.org/zap"
@@ -13,13 +14,20 @@ import (
 
 // TenantsHandler bundles all tenant-related HTTP handlers.
 type TenantsHandler struct {
-	store *postgres.Store
-	log   *zap.Logger
+	store   *postgres.Store
+	log     *zap.Logger
+	auditor *audit.Logger
 }
 
 // NewTenantsHandler constructs a TenantsHandler.
 func NewTenantsHandler(store *postgres.Store, log *zap.Logger) *TenantsHandler {
 	return &TenantsHandler{store: store, log: log}
+}
+
+// WithAuditor attaches an audit logger to the TenantsHandler.
+func (h *TenantsHandler) WithAuditor(a *audit.Logger) *TenantsHandler {
+	h.auditor = a
+	return h
 }
 
 // createTenantRequest is the expected POST body.
@@ -180,6 +188,21 @@ func (h *TenantsHandler) UpdateEgressPolicy(w http.ResponseWriter, r *http.Reque
 		h.log.Error("update egress policy failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "failed to update egress policy")
 		return
+	}
+
+	if h.auditor != nil {
+		actorID, actorType := resolveActor(r)
+		h.auditor.Log(r.Context(), models.AuditEntry{
+			TenantID:   tenant.ID,
+			ActorID:    actorID,
+			ActorType:  actorType,
+			Action:     "egress_update",
+			ResourceID: tenant.ID,
+			Metadata: auditMeta(map[string]any{
+				"blocked_cidrs":   req.BlockedCIDRs,
+				"blocked_domains": req.BlockedDomains,
+			}),
+		})
 	}
 
 	writeJSON(w, http.StatusOK, updated.EgressPolicy)

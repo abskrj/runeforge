@@ -7,19 +7,28 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/runeforge/control-plane/internal/api/middleware"
+	"github.com/runeforge/control-plane/internal/audit"
+	"github.com/runeforge/control-plane/internal/models"
 	"github.com/runeforge/control-plane/internal/store/postgres"
 	"go.uber.org/zap"
 )
 
 // VersionsHandler bundles all snippet version HTTP handlers.
 type VersionsHandler struct {
-	store *postgres.Store
-	log   *zap.Logger
+	store  *postgres.Store
+	log    *zap.Logger
+	auditor *audit.Logger
 }
 
 // NewVersionsHandler constructs a VersionsHandler.
 func NewVersionsHandler(store *postgres.Store, log *zap.Logger) *VersionsHandler {
 	return &VersionsHandler{store: store, log: log}
+}
+
+// WithAuditor attaches an audit logger to the VersionsHandler.
+func (h *VersionsHandler) WithAuditor(a *audit.Logger) *VersionsHandler {
+	h.auditor = a
+	return h
 }
 
 // isValidEnv returns true if env is one of the permitted values.
@@ -204,6 +213,18 @@ func (h *VersionsHandler) PublishVersion(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	if h.auditor != nil {
+		actorID, actorType := resolveActor(r)
+		h.auditor.Log(r.Context(), models.AuditEntry{
+			TenantID:   tenant.ID,
+			ActorID:    actorID,
+			ActorType:  actorType,
+			Action:     "publish",
+			ResourceID: snippetID,
+			Metadata:   auditMeta(map[string]any{"version_num": num, "env": env}),
+		})
+	}
+
 	writeJSON(w, http.StatusOK, published)
 }
 
@@ -261,6 +282,18 @@ func (h *VersionsHandler) SetCanary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.auditor != nil {
+		actorID, actorType := resolveActor(r)
+		h.auditor.Log(r.Context(), models.AuditEntry{
+			TenantID:   tenant.ID,
+			ActorID:    actorID,
+			ActorType:  actorType,
+			Action:     "canary_set",
+			ResourceID: snippetID,
+			Metadata:   auditMeta(map[string]any{"version_id": req.VersionID, "percent": req.Percent, "env": env}),
+		})
+	}
+
 	writeJSON(w, http.StatusOK, se)
 }
 
@@ -294,6 +327,18 @@ func (h *VersionsHandler) ClearCanary(w http.ResponseWriter, r *http.Request) {
 		h.log.Error("clear canary failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "failed to clear canary")
 		return
+	}
+
+	if h.auditor != nil {
+		actorID, actorType := resolveActor(r)
+		h.auditor.Log(r.Context(), models.AuditEntry{
+			TenantID:   tenant.ID,
+			ActorID:    actorID,
+			ActorType:  actorType,
+			Action:     "canary_clear",
+			ResourceID: snippetID,
+			Metadata:   auditMeta(map[string]any{"env": env}),
+		})
 	}
 
 	w.WriteHeader(http.StatusNoContent)

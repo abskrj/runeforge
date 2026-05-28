@@ -19,6 +19,16 @@ type Session struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type RefreshToken struct {
+	ID        string     `json:"id"`
+	UserID    string     `json:"user_id"`
+	Token     string     `json:"token,omitempty"` // raw, only on creation
+	TokenHash string     `json:"-"`
+	ExpiresAt time.Time  `json:"expires_at"`
+	RevokedAt *time.Time `json:"revoked_at,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
+}
+
 type TenantMember struct {
 	TenantID  string    `json:"tenant_id"`
 	UserID    string    `json:"user_id"`

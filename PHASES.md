@@ -304,17 +304,33 @@ Phase 7 builds the embed app and accepts branding config as URL params. Phase 8 
 
 ---
 
-## Phase 9 — Hardening & Advanced Features
+## Phase 9 — Hardening & Advanced Features (complete)
 
 **Goal:** Production-grade security hardening, full schema-driven API docs, and enterprise auth.
 
-### Scope
+### Delivered
 
-- **Firecracker executor plugin** — pluggable `Executor` interface implementation using AWS Firecracker microVMs; VM-boundary isolation; snapshot/restore for sub-50ms warm starts; requires KVM (bare metal or metal EC2 instances)
-- **OpenAPI spec generation** — at publish time, extract Zod / Pydantic schemas and emit a full OpenAPI 3.1 spec for the snippet's invoke endpoint; expose at `GET /v1/snippets/{id}/openapi.json`
-- **JWT auth** — RS256 JWTs as an alternative to API keys; short-lived (15min) + refresh tokens; intended for Web IDE sessions and user-facing callers; also enables Phase 8 team member login without API keys
-- **Seccomp profiles** — production-grade syscall allowlist for the ProcessExecutor; block `ptrace`, `mount`, `clone(CLONE_NEWUSER)`, `perf_event_open`, etc.
-- **Audit log** — append-only log of all management actions (publish, secret create, egress change, member invite) per tenant; queryable by admin
+- **JWT auth (RS256)** — replaces Postgres session tokens with stateless RS256 JWTs; access token 15min, refresh token 7d stored in Postgres with rotation; JWKS endpoint at `GET /.well-known/jwks.json`; ephemeral key generated with warning if `JWT_PRIVATE_KEY` not set
+- **Firecracker executor plugin** — optional `Executor` interface implementation via `EXECUTOR_TYPE=firecracker`; requires `/dev/kvm`; full interface with documented VM lifecycle (jailer → kernel boot → vsock → result); stub implementation compiles and is interface-complete; real Firecracker binary + rootfs images needed for bare-metal deployment
+- **Seccomp profile for executor containers** — `services/executor-runtime/seccomp-executor.json`; blocks `ptrace`, `mount`, `CLONE_NEWUSER`, `perf_event_open`, `kexec`, `settimeofday`, kernel module ops, and more; applied to `bun-executor` and `python-executor` in `docker-compose.yml`
+- **Audit log** — append-only Postgres table (`audit_log`); all management actions logged (publish, secret_create, secret_delete, egress_update, member_invite, member_remove, api_key_create, api_key_revoke, branding_update, canary_set, canary_clear); fire-and-forget logger; queryable via `GET /v1/tenants/{slug}/audit-log` (admin scope)
+- **OpenAPI generation**: deferred
+
+### New API surface
+
+```
+GET  /.well-known/jwks.json              → JWKS public key (no auth)
+POST /v1/admin/auth/refresh              → exchange refresh token for new pair (no auth)
+GET  /v1/tenants/{slug}/audit-log        → list audit log entries (admin scope)
+```
+
+### New data model (migration 008)
+
+```sql
+DROP TABLE user_sessions;  -- replaced by JWT
+CREATE TABLE refresh_tokens (id, user_id, token_hash UNIQUE, expires_at, revoked_at, created_at);
+CREATE TABLE audit_log (id, tenant_id, actor_id, actor_type, action, resource_id, metadata JSONB, created_at);
+```
 
 ---
 

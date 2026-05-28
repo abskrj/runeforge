@@ -78,6 +78,56 @@ func (s *Store) DeleteSession(ctx context.Context, tokenHash string) error {
 	return err
 }
 
+// CreateRefreshToken inserts a new refresh token record and returns it.
+func (s *Store) CreateRefreshToken(ctx context.Context, userID, tokenHash string, expiresAt time.Time) (*models.RefreshToken, error) {
+	row := s.pool.QueryRow(ctx,
+		`INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
+		 VALUES ($1, $2, $3)
+		 RETURNING id, user_id, token_hash, expires_at, revoked_at, created_at`,
+		userID, tokenHash, expiresAt,
+	)
+	return scanRefreshToken(row)
+}
+
+// GetRefreshTokenByHash retrieves a refresh token by its hashed value.
+// Returns an error if the token does not exist, is revoked, or has expired.
+func (s *Store) GetRefreshTokenByHash(ctx context.Context, tokenHash string) (*models.RefreshToken, error) {
+	row := s.pool.QueryRow(ctx,
+		`SELECT id, user_id, token_hash, expires_at, revoked_at, created_at
+		 FROM refresh_tokens
+		 WHERE token_hash = $1`,
+		tokenHash,
+	)
+	rt, err := scanRefreshToken(row)
+	if err != nil {
+		return nil, fmt.Errorf("GetRefreshTokenByHash: %w", err)
+	}
+	if rt.RevokedAt != nil {
+		return nil, fmt.Errorf("refresh token has been revoked")
+	}
+	if rt.ExpiresAt.Before(time.Now()) {
+		return nil, fmt.Errorf("refresh token has expired")
+	}
+	return rt, nil
+}
+
+// RevokeRefreshToken marks a refresh token as revoked by setting revoked_at.
+func (s *Store) RevokeRefreshToken(ctx context.Context, tokenHash string) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE refresh_tokens SET revoked_at = now() WHERE token_hash = $1`,
+		tokenHash,
+	)
+	return err
+}
+
+func scanRefreshToken(s scannable) (*models.RefreshToken, error) {
+	var rt models.RefreshToken
+	if err := s.Scan(&rt.ID, &rt.UserID, &rt.TokenHash, &rt.ExpiresAt, &rt.RevokedAt, &rt.CreatedAt); err != nil {
+		return nil, err
+	}
+	return &rt, nil
+}
+
 func scanUser(s scannable) (*models.User, error) {
 	var u models.User
 	if err := s.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.CreatedAt, &u.UpdatedAt); err != nil {

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/runeforge/control-plane/internal/audit"
 	"github.com/runeforge/control-plane/internal/models"
 	"go.uber.org/zap"
 )
@@ -19,13 +20,20 @@ type APIKeysStore interface {
 
 // APIKeysHandler handles API key list and revoke endpoints.
 type APIKeysHandler struct {
-	store APIKeysStore
-	log   *zap.Logger
+	store   APIKeysStore
+	log     *zap.Logger
+	auditor *audit.Logger
 }
 
 // NewAPIKeysHandler constructs an APIKeysHandler.
 func NewAPIKeysHandler(store APIKeysStore, log *zap.Logger) *APIKeysHandler {
 	return &APIKeysHandler{store: store, log: log}
+}
+
+// WithAuditor attaches an audit logger to the APIKeysHandler.
+func (h *APIKeysHandler) WithAuditor(a *audit.Logger) *APIKeysHandler {
+	h.auditor = a
+	return h
 }
 
 // safeAPIKey is the public representation of an API key — no raw key or hash.
@@ -75,7 +83,7 @@ func (h *APIKeysHandler) DeleteAPIKey(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "tenantSlug")
 	keyID := chi.URLParam(r, "keyID")
 
-	_, err := h.store.GetTenantBySlug(r.Context(), slug)
+	tenant, err := h.store.GetTenantBySlug(r.Context(), slug)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "tenant not found")
 		return
@@ -85,6 +93,17 @@ func (h *APIKeysHandler) DeleteAPIKey(w http.ResponseWriter, r *http.Request) {
 		h.log.Error("delete api key failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "failed to delete api key")
 		return
+	}
+
+	if h.auditor != nil {
+		actorID, actorType := resolveActor(r)
+		h.auditor.Log(r.Context(), models.AuditEntry{
+			TenantID:   tenant.ID,
+			ActorID:    actorID,
+			ActorType:  actorType,
+			Action:     "api_key_revoke",
+			ResourceID: keyID,
+		})
 	}
 
 	w.WriteHeader(http.StatusNoContent)

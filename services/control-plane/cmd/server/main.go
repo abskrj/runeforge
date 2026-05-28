@@ -12,6 +12,8 @@ import (
 	"github.com/runeforge/control-plane/internal/api"
 	"github.com/runeforge/control-plane/internal/auth"
 	"github.com/runeforge/control-plane/internal/config"
+	"github.com/runeforge/control-plane/internal/executor"
+	"github.com/runeforge/control-plane/internal/executor/firecracker"
 	"github.com/runeforge/control-plane/internal/executor/remote"
 	"github.com/runeforge/control-plane/internal/observability"
 	"github.com/runeforge/control-plane/internal/scheduler"
@@ -56,7 +58,23 @@ func main() {
 	log.Info("postgres connected and migrations applied")
 
 	// --- Executor ---
-	exec := remote.New(cfg.BunExecutorURL, cfg.PythonExecutorURL)
+	var exec executor.Executor
+	switch cfg.ExecutorType {
+	case "firecracker":
+		fcExec, err := firecracker.New(firecracker.Config{
+			FirecrackerBin: cfg.FirecrackerBinary,
+			JailerBin:      cfg.FirecrackerJailerBinary,
+			BunRootfs:      cfg.FirecrackerBunRootfs,
+			PythonRootfs:   cfg.FirecrackerPythonRootfs,
+			KernelImage:    cfg.FirecrackerKernelImage,
+		}, log)
+		if err != nil {
+			log.Fatal("firecracker executor init failed", zap.Error(err))
+		}
+		exec = fcExec
+	default:
+		exec = remote.New(cfg.BunExecutorURL, cfg.PythonExecutorURL)
+	}
 
 	// --- Redis (optional — if unreachable we fall back to sync-only mode) ---
 	var redisClient *redisstore.Client
@@ -86,10 +104,11 @@ func main() {
 	}
 
 	// --- Auth provider ---
-	authProvider := auth.NewPasswordProvider(store)
+	privKey, pubKey := cfg.JWTKeyPair(log)
+	authProvider := auth.NewJWTProvider(store, privKey, "https://api.runeforge.io")
 
 	// --- Router ---
-	router := api.NewRouter(store, sched, log, encKey, authProvider)
+	router := api.NewRouterWithJWT(store, sched, log, encKey, authProvider, pubKey)
 
 	// --- HTTP server ---
 	srv := &http.Server{
