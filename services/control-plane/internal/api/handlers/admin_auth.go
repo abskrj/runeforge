@@ -24,6 +24,7 @@ type AdminAuthStore interface {
 	GetInviteByTokenHash(ctx context.Context, hash string) (*models.InviteToken, error)
 	AcceptInvite(ctx context.Context, id string) error
 	AddMember(ctx context.Context, tenantID, userID, role string) (*models.TenantMember, error)
+	GetUserPrimaryTenantSlug(ctx context.Context, userID string) (string, error)
 }
 
 // AdminAuthHandler handles email/password auth for the admin portal.
@@ -133,9 +134,12 @@ func (h *AdminAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tenantSlug, _ := h.store.GetUserPrimaryTenantSlug(r.Context(), sess.UserID)
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"session_token": sess.Token,
 		"expires_at":    sess.ExpiresAt,
+		"tenant_slug":   tenantSlug,
 	})
 }
 

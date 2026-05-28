@@ -84,10 +84,40 @@ services:
       REPLAY_BUCKET: runeforge-replays
       SESSION_DURATION_HOURS: "24"
       EXECUTOR_TYPE: "process"
+      # Stable dev JWT key — replace with a real secret in production.
+      JWT_PRIVATE_KEY: |
+        -----BEGIN PRIVATE KEY-----
+        MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDjoYFo5r9NUD8w
+        aIv0tQ9UkHH+Fmt5k8fUlhs0n+vvHxMCrm4MqBMaF0BZ+9y/DOyghnng6X717hRm
+        ClrQqoESPeMVFA51EoQb1iRk7cA4Z6Mxr2SMWazXW7AcvcukHQbj9nFC0btkXwky
+        djJssRXcbgX7QNEp243/CVQlex3tJlv+vTtqQ6b4ohUDOyOk+0YKs29cGdgAJEaE
+        mD1UqnvGUkNJP5qeWuqWkYJBwwPqstoJzxDoqFcTPBzvY+mJXLcst3akr7xaa7C9
+        hMpkCqs8ABq09vZ8Wcx7xUN6sk9AVvLnc9pukHqcJp3xLBTPnlf3Ltf0aKTSJQKr
+        gMaG3UJ7AgMBAAECggEADvjD8Ljgkz64cUAnGGjCQd8gSESEPCJerdpTnsH3/CnQ
+        j8gWP+ncG8a0ulZo/f3lIGfH42WoLpfCqrV6pKfaRm9gnLXNf6DApK4QhbznfC5A
+        2xc8p0iMqDuFGVbYaopoNh0y9OCjkSX5DmMczO5W0EFCTnTEbRreO4yLBs4SuVLB
+        TtgZFI95MmHmL0z2I0wT5X7NXPeDYbzItcTGCQkJ2L3WqFo1fVaqQUtnNFQBiUOs
+        Tw4fxKo4GmBSQ9sRBZYOi3FkW6w0xJNPhOhnNeCv1q7r2CXY5X3HSOcFHtsX5DMQ
+        yM9uvwP/9zRs38HBB+37Ysde7vgQ+Pavv/k5FaNcOQKBgQD1aA9cRNEc/4xtRj0B
+        7YWGX56TU9g5MdvlUlTs+ScJ+bi7UYOYqLpGDivQq2nNyfgVc1wJznWl5XBJJXXR
+        Hbk5v2Bibt5wixQKBx1mMLw9e1IMRPfBn6dywGfhV36f0Mb/Qnyyb7vnjNKLEx3o
+        NS/YYNvpLrsz7vb7Q0Ifi1lo2QKBgQDtdQK+iCZx/PBxiHu+ssj42zwf5h1P+wXs
+        8AO4EEMaRYlDqHT1AnnqOq0cLalOhWII/cMQ6giZNZxG/p5uYNMzsdIHHGUXYbQ8
+        AXKUUbhWcykj5x8gO9Qvs+xGJH7q5biTSq4S2xAkwsBtAqlfXuR8wC22XH+BojKm
+        DsaIZ6rRcwKBgHQ2SgfcwtYjoiFhQKS4ESI4B8Um0F8NYF+xZGwv9K/BpRx3loTl
+        agigz1jqw5jjSusFjRFLxuS/yTOqXKehlsRk/0S90fKjueKhyedJrurCinEq+9Si
+        QU6TFN5ea6VM3d+lYZ2yUd5uDoozjFcZUMX74EgFjDskr6r/B8IeYEHJAoGAQKoH
+        uEktZwdBlzlasYDQd+yEAA/TVa9/Wpm1+Y78JxBeo/0g9IPbHW0jLTRGEesC2n34
+        fAevlcFisHawQFC/0ykOj/8sjGSAB4NBZ6CleW1c+7j54fZI/0CZDDTuFxu92uaQ
+        ZvQe/lPGwSjjZORbhplzGWExG+VGs6/8YrMQcn8CgYEAqvpbxBBXBrULecCgKFt0
+        yRptejojjFqp2fm9ZgZI5rOGTqB2Y/hFPrZZS+26WE6+NbhjN66W4I4+xv+UklP1
+        /U1Kgmig2lat12we4ljQAkiHg+WSW7PlE2F39qH7GKXNaUScOhqR1+32PL0rcGJh
+        j23LJh+RwYiYDBjNA0rIAgE=
+        -----END PRIVATE KEY-----
       # First-boot only: creates an admin user + tenant on startup, then remove these.
-      # BOOTSTRAP_EMAIL: admin@example.com
-      # BOOTSTRAP_PASSWORD: changeme123
-      # BOOTSTRAP_TENANT: myorg
+      BOOTSTRAP_EMAIL: admin@example.com
+      BOOTSTRAP_PASSWORD: changeme123
+      BOOTSTRAP_TENANT: myorg
     depends_on:
       postgres:
         condition: service_healthy

@@ -60,7 +60,7 @@ async function request<T>(
 
 export const api = {
   // Auth
-  async login(email: string, password: string): Promise<{ session_token: string; expires_at: string }> {
+  async login(email: string, password: string): Promise<{ session_token: string; expires_at: string; tenant_slug: string }> {
     return request('POST', '/v1/admin/auth/login', { email, password }, 'none')
   },
 

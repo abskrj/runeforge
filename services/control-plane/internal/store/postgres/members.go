@@ -78,3 +78,21 @@ func (s *Store) GetMemberRole(ctx context.Context, tenantID, userID string) (str
 	}
 	return role, nil
 }
+
+// GetUserPrimaryTenantSlug returns the slug of the first tenant the user belongs to,
+// ordered by when they were added. Returns ("", nil) if the user has no memberships.
+func (s *Store) GetUserPrimaryTenantSlug(ctx context.Context, userID string) (string, error) {
+	var slug string
+	err := s.pool.QueryRow(ctx,
+		`SELECT t.slug FROM tenants t
+		 JOIN tenant_members tm ON tm.tenant_id = t.id
+		 WHERE tm.user_id = $1
+		 ORDER BY tm.invited_at ASC
+		 LIMIT 1`,
+		userID,
+	).Scan(&slug)
+	if err != nil {
+		return "", nil // no membership is fine — not an error
+	}
+	return slug, nil
+}

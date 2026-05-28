@@ -6,7 +6,6 @@ export default function LoginPage() {
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [tenantSlug, setTenantSlug] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -17,7 +16,7 @@ export default function LoginPage() {
     try {
       const res = await api.login(email, password)
       localStorage.setItem('sessionToken', res.session_token)
-      if (tenantSlug) localStorage.setItem('tenantSlug', tenantSlug)
+      if (res.tenant_slug) localStorage.setItem('tenantSlug', res.tenant_slug)
       navigate('/dashboard/overview')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed')
@@ -59,16 +58,6 @@ export default function LoginPage() {
               required
               className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
               placeholder="••••••••"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">Tenant Slug</label>
-            <input
-              type="text"
-              value={tenantSlug}
-              onChange={(e) => setTenantSlug(e.target.value)}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
-              placeholder="acme"
             />
           </div>
           <button
