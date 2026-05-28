@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/runeforge/control-plane/internal/auth"
+	"github.com/abskrj/velane/services/control-plane/internal/auth"
 )
 
 func TestGenerateAPIKey_Format(t *testing.T) {
@@ -13,11 +13,11 @@ func TestGenerateAPIKey_Format(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.HasPrefix(plain, "rf_") {
-		t.Errorf("plain key must start with 'rf_', got %q", plain)
+	if !strings.HasPrefix(plain, "vl_") {
+		t.Errorf("plain key must start with 'vl_', got %q", plain)
 	}
 
-	hexPart := strings.TrimPrefix(plain, "rf_")
+	hexPart := strings.TrimPrefix(plain, "vl_")
 	if len(hexPart) != 32 {
 		t.Errorf("hex portion must be 32 chars, got %d", len(hexPart))
 	}

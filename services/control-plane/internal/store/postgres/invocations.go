@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/runeforge/control-plane/internal/models"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
 )
 
 // CreateInvocation inserts a new invocation record.

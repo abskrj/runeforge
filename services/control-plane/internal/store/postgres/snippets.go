@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/runeforge/control-plane/internal/models"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
 )
 
 // CreateSnippet inserts a new snippet and ensures dev/prod environment rows

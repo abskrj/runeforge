@@ -1,4 +1,4 @@
-module github.com/runeforge/control-plane
+module github.com/abskrj/velane/services/control-plane
 
 go 1.22
 

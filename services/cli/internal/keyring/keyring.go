@@ -2,7 +2,7 @@ package keyring
 
 import "github.com/zalando/go-keyring"
 
-const service = "runeforge"
+const service = "velane"
 
 // SaveAPIKey stores the API key in the system keychain.
 func SaveAPIKey(key string) error {

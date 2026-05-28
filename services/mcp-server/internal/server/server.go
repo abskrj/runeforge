@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/runeforge/mcp-server/internal/protocol"
-	"github.com/runeforge/mcp-server/internal/tools"
+	"github.com/abskrj/velane/services/mcp-server/internal/protocol"
+	"github.com/abskrj/velane/services/mcp-server/internal/tools"
 )
 
 type Server struct {
@@ -40,7 +40,7 @@ func (s *Server) HandleRequest(ctx context.Context, authHeader string, req proto
 	case "initialize":
 		return protocol.Success(req.ID, map[string]any{
 			"serverInfo": map[string]any{
-				"name":    "runeforge-mcp-server",
+				"name":    "velane-mcp-server",
 				"version": "0.1.0",
 			},
 			"capabilities": map[string]any{

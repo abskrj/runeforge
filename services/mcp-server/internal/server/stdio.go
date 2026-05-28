@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/runeforge/mcp-server/internal/protocol"
+	"github.com/abskrj/velane/services/mcp-server/internal/protocol"
 )
 
 func RunStdio(ctx context.Context, srv *Server, in io.Reader, out io.Writer, authHeader string) error {

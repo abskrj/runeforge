@@ -4,15 +4,15 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: runeforge
-      POSTGRES_PASSWORD: runeforge
-      POSTGRES_DB: runeforge
+      POSTGRES_USER: velane
+      POSTGRES_PASSWORD: velane
+      POSTGRES_DB: velane
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U runeforge -d runeforge"]
+      test: ["CMD-SHELL", "pg_isready -U velane -d velane"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -68,11 +68,12 @@ services:
 
   control-plane:
     build:
-      context: ./services/control-plane
+      context: .
+      dockerfile: services/control-plane/Dockerfile
     ports:
       - "8080:8080"
     environment:
-      DATABASE_URL: postgres://runeforge:runeforge@postgres:5432/runeforge
+      DATABASE_URL: postgres://velane:velane@postgres:5432/velane
       BUN_EXECUTOR_URL: http://bun-executor:8080
       PYTHON_EXECUTOR_URL: http://python-executor:8080
       PORT: "8080"
@@ -80,8 +81,8 @@ services:
       WORKER_COUNT: "5"
       ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000001"
       CLICKHOUSE_DSN: http://clickhouse:8123
-      LOGS_BUCKET: runeforge-logs
-      REPLAY_BUCKET: runeforge-replays
+      LOGS_BUCKET: velane-logs
+      REPLAY_BUCKET: velane-replays
       SESSION_DURATION_HOURS: "24"
       EXECUTOR_TYPE: "process"
       # Stable dev JWT key — replace with a real secret in production.
@@ -141,16 +142,6 @@ services:
     environment:
       CONTROL_PLANE_URL: http://control-plane:8080
       PORT: "8090"
-    depends_on:
-      control-plane:
-        condition: service_started
-    restart: unless-stopped
-
-  embed-dashboard:
-    build:
-      context: ./apps/embed-dashboard
-    ports:
-      - "8091:80"
     depends_on:
       control-plane:
         condition: service_started

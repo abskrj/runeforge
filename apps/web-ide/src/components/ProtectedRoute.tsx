@@ -6,7 +6,7 @@ interface Props {
 }
 
 export default function ProtectedRoute({ children }: Props) {
-  const auth = sessionStorage.getItem('runeforge_auth')
+  const auth = sessionStorage.getItem('velane_auth')
   if (!auth) {
     return <Navigate to="/login" replace />
   }

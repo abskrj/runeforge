@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/runeforge/control-plane/internal/store/postgres"
+	"github.com/abskrj/velane/services/control-plane/internal/store/postgres"
 )
 
 // testStore connects to a real Postgres instance using TEST_DATABASE_URL.

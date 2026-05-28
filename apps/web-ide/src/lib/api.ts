@@ -1,7 +1,7 @@
 import type { CreateSnippetInput, InvocationResult, Snippet, SnippetVersion } from '../types'
 
 function getAuth(): { tenant: string; apiKey: string } | null {
-  const raw = sessionStorage.getItem('runeforge_auth')
+  const raw = sessionStorage.getItem('velane_auth')
   if (!raw) return null
   try {
     return JSON.parse(raw)

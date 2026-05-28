@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/runeforge/control-plane/internal/auth"
-	"github.com/runeforge/control-plane/internal/models"
+	"github.com/abskrj/velane/services/control-plane/internal/auth"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -127,7 +127,7 @@ func TestJWTProvider_AuthenticateIssuesTokens(t *testing.T) {
 	store.addUser("user-1", "alice@example.com", "password123")
 
 	privKey, _ := newTestKeyPair(t)
-	p := auth.NewJWTProvider(store, privKey, "https://test.runeforge.io")
+	p := auth.NewJWTProvider(store, privKey, "https://test.velane.io")
 
 	sess, err := p.Authenticate(context.Background(), "alice@example.com", "password123")
 	if err != nil {
@@ -149,7 +149,7 @@ func TestJWTProvider_ValidateAccessToken(t *testing.T) {
 	store.addUser("user-1", "alice@example.com", "password123")
 
 	privKey, _ := newTestKeyPair(t)
-	p := auth.NewJWTProvider(store, privKey, "https://test.runeforge.io")
+	p := auth.NewJWTProvider(store, privKey, "https://test.velane.io")
 
 	sess, err := p.Authenticate(context.Background(), "alice@example.com", "password123")
 	if err != nil {
@@ -170,7 +170,7 @@ func TestJWTProvider_ExpiredAccessToken(t *testing.T) {
 	store.addUser("user-1", "alice@example.com", "password123")
 
 	privKey, _ := newTestKeyPair(t)
-	p := auth.NewJWTProvider(store, privKey, "https://test.runeforge.io")
+	p := auth.NewJWTProvider(store, privKey, "https://test.velane.io")
 
 	// Manually create an already-expired token.
 	type expiredClaims struct {
@@ -181,7 +181,7 @@ func TestJWTProvider_ExpiredAccessToken(t *testing.T) {
 		Email: "alice@example.com",
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   "user-1",
-			Issuer:    "https://test.runeforge.io",
+			Issuer:    "https://test.velane.io",
 			IssuedAt:  jwt.NewNumericDate(time.Now().Add(-2 * time.Hour)),
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(-1 * time.Hour)),
 		},
@@ -201,7 +201,7 @@ func TestJWTProvider_InvalidSignature(t *testing.T) {
 
 	privKey, _ := newTestKeyPair(t)
 	wrongKey, _ := newTestKeyPair(t)
-	p := auth.NewJWTProvider(store, privKey, "https://test.runeforge.io")
+	p := auth.NewJWTProvider(store, privKey, "https://test.velane.io")
 
 	// Sign with the wrong key; validate with the correct public key.
 	type testClaims struct {
@@ -212,7 +212,7 @@ func TestJWTProvider_InvalidSignature(t *testing.T) {
 		Email: "alice@example.com",
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   "user-1",
-			Issuer:    "https://test.runeforge.io",
+			Issuer:    "https://test.velane.io",
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute)),
 		},
@@ -231,7 +231,7 @@ func TestJWTProvider_RefreshRotates(t *testing.T) {
 	u := store.addUser("user-1", "alice@example.com", "password123")
 
 	privKey, _ := newTestKeyPair(t)
-	p := auth.NewJWTProvider(store, privKey, "https://test.runeforge.io")
+	p := auth.NewJWTProvider(store, privKey, "https://test.velane.io")
 
 	// Inject a known raw refresh token directly.
 	rawRefresh := "knownrawrefreshtoken0000000000000000000000000000000000000000000"
@@ -270,7 +270,7 @@ func TestJWTProvider_RevokedRefreshToken(t *testing.T) {
 	u := store.addUser("user-1", "carol@example.com", "password789")
 
 	privKey, _ := newTestKeyPair(t)
-	p := auth.NewJWTProvider(store, privKey, "https://test.runeforge.io")
+	p := auth.NewJWTProvider(store, privKey, "https://test.velane.io")
 
 	rawToken := "revokedrefreshtoken00000000000000000000000000000000000000000000"
 	hash := hashForTest(rawToken)

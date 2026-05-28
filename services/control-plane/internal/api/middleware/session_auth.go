@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/runeforge/control-plane/internal/auth"
-	"github.com/runeforge/control-plane/internal/models"
+	"github.com/abskrj/velane/services/control-plane/internal/auth"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
 	"go.uber.org/zap"
 )
 

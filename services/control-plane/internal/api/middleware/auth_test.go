@@ -7,8 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/runeforge/control-plane/internal/api/middleware"
-	"github.com/runeforge/control-plane/internal/models"
+	"github.com/abskrj/velane/services/control-plane/internal/api/middleware"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
 	"go.uber.org/zap"
 )
 
@@ -73,7 +73,7 @@ func TestAuth_InvalidKey(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("Authorization", "Bearer rf_badkey")
+	req.Header.Set("Authorization", "Bearer vl_badkey")
 	h.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusUnauthorized {
@@ -105,7 +105,7 @@ func TestAuth_ValidKey_AttachesTenantAndKey(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("Authorization", "Bearer rf_validkey12345")
+	req.Header.Set("Authorization", "Bearer vl_validkey12345")
 	h.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -135,7 +135,7 @@ func TestAuth_TenantLookupFails(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("Authorization", "Bearer rf_validkey12345")
+	req.Header.Set("Authorization", "Bearer vl_validkey12345")
 	h.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusUnauthorized {
@@ -160,7 +160,7 @@ func TestRequireScope_AllowsMatchingScope(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/", nil)
-	req.Header.Set("Authorization", "Bearer rf_valid")
+	req.Header.Set("Authorization", "Bearer vl_valid")
 	h.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -185,7 +185,7 @@ func TestRequireScope_BlocksMissingScope(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/", nil)
-	req.Header.Set("Authorization", "Bearer rf_valid")
+	req.Header.Set("Authorization", "Bearer vl_valid")
 	h.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusForbidden {
@@ -211,7 +211,7 @@ func TestRequireScope_AdminPassesAnyScope(t *testing.T) {
 
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/", nil)
-		req.Header.Set("Authorization", "Bearer rf_admin")
+		req.Header.Set("Authorization", "Bearer vl_admin")
 		h.ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusOK {

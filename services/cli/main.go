@@ -1,6 +1,6 @@
 package main
 
-import "github.com/runeforge/cli/cmd"
+import "github.com/abskrj/velane/services/cli/cmd"
 
 func main() {
 	cmd.Execute()

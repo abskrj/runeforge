@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/runeforge/cli/internal/client"
-	"github.com/runeforge/cli/internal/keyring"
+	"github.com/abskrj/velane/services/cli/internal/client"
+	"github.com/abskrj/velane/services/cli/internal/keyring"
 	"github.com/spf13/cobra"
 )
 
@@ -23,7 +23,7 @@ var invokeCmd = &cobra.Command{
 
 		key, err := keyring.LoadAPIKey()
 		if err != nil {
-			return fmt.Errorf("no API key found — run: runeforge login --key <key>")
+			return fmt.Errorf("no API key found — run: velane login --key <key>")
 		}
 		if tenantSlug == "" {
 			return fmt.Errorf("--tenant flag is required")

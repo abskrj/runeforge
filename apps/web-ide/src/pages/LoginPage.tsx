@@ -8,14 +8,14 @@ export default function LoginPage() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    sessionStorage.setItem('runeforge_auth', JSON.stringify({ tenant, apiKey }))
+    sessionStorage.setItem('velane_auth', JSON.stringify({ tenant, apiKey }))
     navigate('/')
   }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50">
       <div className="w-full max-w-sm rounded-xl border border-gray-200 bg-white p-8 shadow-sm">
-        <h1 className="mb-6 text-2xl font-bold text-gray-900">Runeforge</h1>
+        <h1 className="mb-6 text-2xl font-bold text-gray-900">Velane</h1>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="tenant">
@@ -39,7 +39,7 @@ export default function LoginPage() {
               id="apikey"
               type="password"
               className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-              placeholder="rf_xxxx"
+              placeholder="vl_xxxx"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               required

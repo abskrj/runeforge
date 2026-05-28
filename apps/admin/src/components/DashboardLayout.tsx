@@ -9,25 +9,34 @@ import {
   Code,
   MonitorSmartphone,
   LogOut,
+  Lock,
+  BookOpen,
+  Layers,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { api } from '../lib/api'
+import { useEmbedMode } from '../hooks/useEmbedMode'
 
-const navItems = [
-  { to: '/dashboard/overview', label: 'Overview', icon: LayoutDashboard },
-  { to: '/dashboard/snippets', label: 'Snippets', icon: Code },
-  { to: '/dashboard/api-keys', label: 'API Keys', icon: Key },
-  { to: '/dashboard/team', label: 'Team', icon: Users },
-  { to: '/dashboard/branding', label: 'Branding', icon: Paintbrush },
-  { to: '/dashboard/usage', label: 'Usage', icon: BarChart2 },
-  { to: '/dashboard/egress', label: 'Egress Policy', icon: Shield },
-  { to: '/dashboard/embed', label: 'Embed', icon: MonitorSmartphone },
+const allNavItems = [
+  { to: '/dashboard/overview', label: 'Overview', icon: LayoutDashboard, embedHidden: false },
+  { to: '/dashboard/snippets', label: 'Snippets', icon: Code, embedHidden: false },
+  { to: '/dashboard/libraries', label: 'Libraries', icon: BookOpen, embedHidden: false },
+  { to: '/dashboard/variables', label: 'Variables', icon: Lock, embedHidden: false },
+  { to: '/dashboard/api-keys', label: 'API Keys', icon: Key, embedHidden: true },
+  { to: '/dashboard/team', label: 'Team', icon: Users, embedHidden: true },
+  { to: '/dashboard/branding', label: 'Branding', icon: Paintbrush, embedHidden: true },
+  { to: '/dashboard/usage', label: 'Usage', icon: BarChart2, embedHidden: false },
+  { to: '/dashboard/egress', label: 'Egress Policy', icon: Shield, embedHidden: true },
+  { to: '/dashboard/embed', label: 'Embed', icon: MonitorSmartphone, embedHidden: true },
 ]
 
 export default function DashboardLayout() {
   const navigate = useNavigate()
   const location = useLocation()
-  const isEditorRoute = /^\/dashboard\/snippets\/.+/.test(location.pathname)
+  const isEmbedMode = useEmbedMode()
+  const isEditorRoute = /^\/dashboard\/(snippets|libraries)\/.+/.test(location.pathname)
+
+  const navItems = allNavItems.filter(item => !isEmbedMode || !item.embedHidden)
 
   const handleLogout = async () => {
     try {
@@ -44,22 +53,25 @@ export default function DashboardLayout() {
   return (
     <div className="flex h-screen bg-gray-50">
       {/* Sidebar */}
-      <aside className="flex w-56 flex-col border-r border-gray-200 bg-white">
-        <div className="flex h-14 items-center border-b border-gray-200 px-4">
-          <span className="text-lg font-bold text-indigo-600">Runeforge</span>
+      <aside className="flex w-64 flex-col border-r border-gray-200 bg-white">
+        <div className="flex h-14 items-center gap-2.5 border-b border-gray-200 px-5">
+          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-gray-900">
+            <Layers size={14} className="text-white" />
+          </div>
+          <span className="text-sm font-semibold text-gray-900">Velane</span>
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-2 py-4">
+        <nav className="flex-1 overflow-y-auto px-3 py-4">
           {navItems.map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}
               to={to}
               className={({ isActive }) =>
                 clsx(
-                  'mb-1 flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                  'mb-0.5 flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors',
                   isActive
-                    ? 'bg-indigo-50 text-indigo-700'
-                    : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900',
+                    ? 'bg-gray-100 font-medium text-gray-900'
+                    : 'font-normal text-gray-500 hover:bg-gray-100 hover:text-gray-800',
                 )
               }
             >
@@ -69,15 +81,17 @@ export default function DashboardLayout() {
           ))}
         </nav>
 
-        <div className="border-t border-gray-200 p-2">
-          <button
-            onClick={handleLogout}
-            className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
-          >
-            <LogOut size={16} />
-            Logout
-          </button>
-        </div>
+        {!isEmbedMode && (
+          <div className="border-t border-gray-200 p-3">
+            <button
+              onClick={handleLogout}
+              className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-normal text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+            >
+              <LogOut size={16} />
+              Logout
+            </button>
+          </div>
+        )}
       </aside>
 
       {/* Main content */}

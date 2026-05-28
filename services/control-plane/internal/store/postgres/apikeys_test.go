@@ -39,10 +39,10 @@ func TestCreateAPIKeyWithPlain(t *testing.T) {
 	if len(key.Scopes) != 2 {
 		t.Errorf("scopes count = %d; want 2", len(key.Scopes))
 	}
-	if !strings.HasPrefix(plain, "rf_") {
-		t.Errorf("plain key must start with 'rf_', got %q", plain)
+	if !strings.HasPrefix(plain, "vl_") {
+		t.Errorf("plain key must start with 'vl_', got %q", plain)
 	}
-	if len(plain) != 35 { // "rf_" + 32 hex chars
+	if len(plain) != 35 { // "vl_" + 32 hex chars
 		t.Errorf("plain key length = %d; want 35", len(plain))
 	}
 	if key.KeyHash == plain {
@@ -92,7 +92,7 @@ func TestValidateAPIKey_InvalidFormat(t *testing.T) {
 	store := testStore(t)
 	ctx := context.Background()
 
-	for _, bad := range []string{"", "notrf_something", "rf_short"} {
+	for _, bad := range []string{"", "notvl_something", "vl_short"} {
 		_, err := store.ValidateAPIKey(ctx, bad)
 		if err == nil {
 			t.Errorf("expected error for invalid key %q, got nil", bad)

@@ -90,6 +90,49 @@ export interface SnippetEnvironment {
   active_version_number: number | null
 }
 
+export interface PlatformLibrary {
+  id: string
+  slug: string
+  language: string
+  name: string
+  description: string
+  updated_at: string
+  docs?: string
+}
+
+export interface Library {
+  id: string
+  tenant_id: string
+  slug: string
+  language: string
+  name: string
+  description: string
+  created_at: string
+  updated_at: string
+}
+
+export interface LibraryVersion {
+  id: string
+  library_id: string
+  version_number: number
+  code: string
+  status: 'draft' | 'published' | 'archived'
+  published_at?: string
+  created_at: string
+}
+
+export interface Secret {
+  id: string
+  tenant_id: string
+  snippet_id?: string
+  name: string
+  is_secret: boolean
+  value?: string // present for variables (is_secret=false), absent for credentials
+  environments: string[]
+  created_at: string
+  updated_at: string
+}
+
 export interface EmbedToken {
   id: string
   tenant_id: string

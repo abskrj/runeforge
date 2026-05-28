@@ -38,7 +38,7 @@ type InvocationResult struct {
 	Stderr       string `json:"stderr"`
 }
 
-// Client is a typed HTTP client for the Runeforge control plane.
+// Client is a typed HTTP client for the Velane control plane.
 type Client struct {
 	base   string
 	tenant string

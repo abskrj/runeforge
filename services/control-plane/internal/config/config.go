@@ -54,7 +54,7 @@ func Load() Config {
 	}
 
 	return Config{
-		DatabaseURL:             getEnv("DATABASE_URL", "postgres://runeforge:runeforge@localhost:5432/runeforge"),
+		DatabaseURL:             getEnv("DATABASE_URL", "postgres://velane:velane@localhost:5432/velane"),
 		BunExecutorURL:          getEnv("BUN_EXECUTOR_URL", "http://localhost:8081"),
 		PythonExecutorURL:       getEnv("PYTHON_EXECUTOR_URL", "http://localhost:8082"),
 		Port:                    getEnv("PORT", "8080"),

@@ -16,13 +16,13 @@ import (
 	"testing"
 	"time"
 
-	api "github.com/runeforge/control-plane/internal/api"
-	"github.com/runeforge/control-plane/internal/auth"
-	"github.com/runeforge/control-plane/internal/executor/remote"
-	"github.com/runeforge/control-plane/internal/models"
-	"github.com/runeforge/control-plane/internal/scheduler"
-	"github.com/runeforge/control-plane/internal/store/postgres"
-	redisstore "github.com/runeforge/control-plane/internal/store/redis"
+	api "github.com/abskrj/velane/services/control-plane/internal/api"
+	"github.com/abskrj/velane/services/control-plane/internal/auth"
+	"github.com/abskrj/velane/services/control-plane/internal/executor/remote"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
+	"github.com/abskrj/velane/services/control-plane/internal/scheduler"
+	"github.com/abskrj/velane/services/control-plane/internal/store/postgres"
+	redisstore "github.com/abskrj/velane/services/control-plane/internal/store/redis"
 	"go.uber.org/zap"
 )
 

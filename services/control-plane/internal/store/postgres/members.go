@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/runeforge/control-plane/internal/models"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
 )
 
 // AddMember inserts a tenant_members row, ignoring conflicts (idempotent).

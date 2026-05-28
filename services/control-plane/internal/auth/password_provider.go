@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/runeforge/control-plane/internal/models"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
 	"golang.org/x/crypto/bcrypt"
 )
 

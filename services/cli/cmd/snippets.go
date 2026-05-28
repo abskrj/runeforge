@@ -9,8 +9,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/runeforge/cli/internal/client"
-	"github.com/runeforge/cli/internal/keyring"
+	"github.com/abskrj/velane/services/cli/internal/client"
+	"github.com/abskrj/velane/services/cli/internal/keyring"
 	"github.com/spf13/cobra"
 )
 
@@ -175,7 +175,7 @@ func detectLanguage(path string) string {
 func newClient() (*client.Client, error) {
 	key, err := keyring.LoadAPIKey()
 	if err != nil {
-		return nil, fmt.Errorf("no API key found — run: runeforge login --key <key>")
+		return nil, fmt.Errorf("no API key found — run: velane login --key <key>")
 	}
 	if tenantSlug == "" {
 		return nil, fmt.Errorf("--tenant flag is required")

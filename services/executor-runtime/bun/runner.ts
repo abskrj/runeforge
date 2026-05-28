@@ -1,5 +1,5 @@
 /**
- * runeforge bun executor runner
+ * velane bun executor runner
  *
  * Persistent HTTP server that accepts POST /run and POST /run/stream requests,
  * writes snippet code to a temporary file, executes it as a Bun subprocess with
@@ -37,9 +37,9 @@
  */
 
 import { randomBytes } from "node:crypto";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 
 const PORT = 8080;
 
@@ -54,6 +54,7 @@ interface RunRequest {
   timeout_ms: number;
   max_memory_mb: number;
   secret_env_vars?: Record<string, string>;
+  libraries?: Record<string, string>;
   egress_policy?: EgressPolicy;
 }
 
@@ -217,6 +218,20 @@ try {
 `.trimStart();
 }
 
+/**
+ * Write library source files into workDir/node_modules/{importPath}/index.ts
+ * so Bun's native module resolution picks them up automatically.
+ * importPath is e.g. "@velane/http-client" or "@myorg/data-utils".
+ */
+async function writeLibraries(workDir: string, libraries: Record<string, string> | undefined): Promise<void> {
+  if (!libraries) return;
+  for (const [importPath, code] of Object.entries(libraries)) {
+    const libDir = join(workDir, "node_modules", importPath);
+    await mkdir(libDir, { recursive: true });
+    await writeFile(join(libDir, "index.ts"), code, "utf8");
+  }
+}
+
 async function runSnippet(req: RunRequest): Promise<RunResult> {
   const id = randomBytes(8).toString("hex");
   const workDir = await mkdtemp(join(tmpdir(), `rune_${id}_`));
@@ -224,6 +239,7 @@ async function runSnippet(req: RunRequest): Promise<RunResult> {
   const harnessPath = join(workDir, "harness.ts");
 
   try {
+    await writeLibraries(workDir, req.libraries);
     await writeFile(snippetPath, req.code, "utf8");
     const harnessCode = buildHarnessCode(snippetPath, req.input, req.egress_policy);
     await writeFile(harnessPath, harnessCode, "utf8");
@@ -361,6 +377,7 @@ async function runSnippetStream(req: RunRequest): Promise<ReadableStream<Uint8Ar
   return new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
+        await writeLibraries(workDir, req.libraries);
         await writeFile(snippetPath, req.code, "utf8");
         const harnessCode = buildStreamHarnessCode(snippetPath, req.input, req.egress_policy);
         await writeFile(harnessPath, harnessCode, "utf8");

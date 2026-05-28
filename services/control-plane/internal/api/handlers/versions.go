@@ -6,10 +6,10 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/runeforge/control-plane/internal/api/middleware"
-	"github.com/runeforge/control-plane/internal/audit"
-	"github.com/runeforge/control-plane/internal/models"
-	"github.com/runeforge/control-plane/internal/store/postgres"
+	"github.com/abskrj/velane/services/control-plane/internal/api/middleware"
+	"github.com/abskrj/velane/services/control-plane/internal/audit"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
+	"github.com/abskrj/velane/services/control-plane/internal/store/postgres"
 	"go.uber.org/zap"
 )
 

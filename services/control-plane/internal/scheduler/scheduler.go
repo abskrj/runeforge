@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"math/rand"
 
-	"github.com/runeforge/control-plane/internal/executor"
-	"github.com/runeforge/control-plane/internal/models"
-	"github.com/runeforge/control-plane/internal/observability"
-	redisstore "github.com/runeforge/control-plane/internal/store/redis"
+	"github.com/abskrj/velane/services/control-plane/internal/executor"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
+	"github.com/abskrj/velane/services/control-plane/internal/observability"
+	"github.com/abskrj/velane/services/control-plane/internal/platformlibs"
+	redisstore "github.com/abskrj/velane/services/control-plane/internal/store/redis"
 )
 
 // Store is the subset of *postgres.Store that the Scheduler depends on.
@@ -23,6 +24,7 @@ type Store interface {
 	UpdateInvocationResult(ctx context.Context, id string, status models.InvocationStatus, output, errMsg, stderr string, durationMs, peakMemoryMB, cpuMs int) error
 	GetInvocation(ctx context.Context, id string) (*models.Invocation, error)
 	GetSecretsForInvocation(ctx context.Context, tenantID, snippetID, env string, encKey []byte) (map[string]string, error)
+	GetTenantLibrariesForInvocation(ctx context.Context, tenantID, tenantSlug, language string) (map[string]string, error)
 	GetTenantByID(ctx context.Context, id string) (*models.Tenant, error)
 }
 
@@ -47,27 +49,52 @@ type Scheduler struct {
 	queue    Queue  // nil in sync-only mode
 	encKey   []byte // for secret decryption
 	observer observability.InvocationObserver
+	platLibs []platformlibs.PlatformLib
 }
 
 // New creates a Scheduler wired to the given store and executor (sync only, no queue).
-func New(store Store, exec executor.Executor, encKey []byte) *Scheduler {
+func New(store Store, exec executor.Executor, encKey []byte, platLibs []platformlibs.PlatformLib) *Scheduler {
 	return &Scheduler{
 		store:    store,
 		executor: exec,
 		encKey:   encKey,
 		observer: observability.NoopObserver{},
+		platLibs: platLibs,
 	}
 }
 
 // NewWithQueue creates a Scheduler with an async job queue.
-func NewWithQueue(store Store, exec executor.Executor, q Queue, encKey []byte) *Scheduler {
+func NewWithQueue(store Store, exec executor.Executor, q Queue, encKey []byte, platLibs []platformlibs.PlatformLib) *Scheduler {
 	return &Scheduler{
 		store:    store,
 		executor: exec,
 		queue:    q,
 		encKey:   encKey,
 		observer: observability.NoopObserver{},
+		platLibs: platLibs,
 	}
+}
+
+// getLibraries merges platform libs (from the embedded binary) with the
+// tenant's latest published libs. Tenant libs override platform libs on
+// the same import path.
+func (s *Scheduler) getLibraries(ctx context.Context, tenantID, tenantSlug, language string) (map[string]string, error) {
+	result := make(map[string]string)
+
+	for _, lib := range s.platLibs {
+		if lib.Language == language {
+			result[platformlibs.ImportPath(language, lib.Slug)] = lib.Code
+		}
+	}
+
+	tenantLibs, err := s.store.GetTenantLibrariesForInvocation(ctx, tenantID, tenantSlug, language)
+	if err != nil {
+		return nil, err
+	}
+	for k, v := range tenantLibs {
+		result[k] = v
+	}
+	return result, nil
 }
 
 // SetObserver injects a post-invocation observer for observability pipelines.
@@ -180,6 +207,11 @@ func (s *Scheduler) Invoke(ctx context.Context, req InvokeRequest) (*models.Invo
 		return nil, fmt.Errorf("fetch tenant: %w", err)
 	}
 
+	libs, err := s.getLibraries(ctx, req.TenantID, tenant.Slug, string(snippet.Language))
+	if err != nil {
+		return nil, fmt.Errorf("fetch libraries: %w", err)
+	}
+
 	invocation, err := s.store.CreateInvocation(ctx, snippet.ID, version.ID, req.Env, req.TenantID, input)
 	if err != nil {
 		return nil, fmt.Errorf("create invocation: %w", err)
@@ -192,6 +224,7 @@ func (s *Scheduler) Invoke(ctx context.Context, req InvokeRequest) (*models.Invo
 		TimeoutMs:     version.TimeoutMs,
 		MaxMemoryMB:   version.MaxMemoryMB,
 		SecretEnvVars: secrets,
+		Libraries:     libs,
 		EgressPolicy:  buildEgressPolicy(tenant.EgressPolicy),
 	})
 
@@ -270,6 +303,11 @@ func (s *Scheduler) InvokeAsync(ctx context.Context, req InvokeRequest, callback
 		}
 	}
 
+	libs, err := s.getLibraries(ctx, req.TenantID, tenant.Slug, string(snippet.Language))
+	if err != nil {
+		return nil, fmt.Errorf("fetch libraries: %w", err)
+	}
+
 	job := redisstore.Job{
 		InvocationID:  invocation.ID,
 		SnippetID:     snippet.ID,
@@ -283,6 +321,7 @@ func (s *Scheduler) InvokeAsync(ctx context.Context, req InvokeRequest, callback
 		CallbackURL:   callbackURL,
 		Env:           req.Env,
 		SecretEnvVars: secrets,
+		Libraries:     libs,
 		EgressPolicy:  jobEgress,
 	}
 
@@ -323,6 +362,11 @@ func (s *Scheduler) InvokeStream(ctx context.Context, req InvokeRequest) (<-chan
 		return nil, nil, fmt.Errorf("create invocation: %w", err)
 	}
 
+	streamLibs, err := s.getLibraries(ctx, req.TenantID, tenant.Slug, string(snippet.Language))
+	if err != nil {
+		return nil, nil, fmt.Errorf("fetch libraries: %w", err)
+	}
+
 	ch, err := s.executor.RunStream(ctx, executor.RunSpec{
 		Language:      string(snippet.Language),
 		Code:          version.Code,
@@ -330,6 +374,7 @@ func (s *Scheduler) InvokeStream(ctx context.Context, req InvokeRequest) (<-chan
 		TimeoutMs:     version.TimeoutMs,
 		MaxMemoryMB:   version.MaxMemoryMB,
 		SecretEnvVars: secrets,
+		Libraries:     streamLibs,
 		EgressPolicy:  buildEgressPolicy(tenant.EgressPolicy),
 	})
 	if err != nil {

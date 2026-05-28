@@ -1,4 +1,4 @@
-module github.com/runeforge/mcp-server
+module github.com/abskrj/velane/services/mcp-server
 
 go 1.22
 

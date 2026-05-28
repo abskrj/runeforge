@@ -2,7 +2,7 @@ package models
 
 import "time"
 
-// Tenant represents an isolated organisation namespace within runeforge.
+// Tenant represents an isolated organisation namespace within velane.
 type Tenant struct {
 	ID            string       `json:"id"`
 	Name          string       `json:"name"`

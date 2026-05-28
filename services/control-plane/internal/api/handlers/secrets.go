@@ -5,10 +5,10 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/runeforge/control-plane/internal/api/middleware"
-	"github.com/runeforge/control-plane/internal/audit"
-	"github.com/runeforge/control-plane/internal/models"
-	"github.com/runeforge/control-plane/internal/store/postgres"
+	"github.com/abskrj/velane/services/control-plane/internal/api/middleware"
+	"github.com/abskrj/velane/services/control-plane/internal/audit"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
+	"github.com/abskrj/velane/services/control-plane/internal/store/postgres"
 	"go.uber.org/zap"
 )
 
@@ -31,12 +31,19 @@ func (h *SecretsHandler) WithAuditor(a *audit.Logger) *SecretsHandler {
 	return h
 }
 
-// createSecretRequest is the expected POST body for secret creation.
+// createSecretRequest is the expected POST body for secret/variable creation.
 type createSecretRequest struct {
 	Name         string   `json:"name"`
 	Value        string   `json:"value"`
+	IsSecret     *bool    `json:"is_secret,omitempty"` // defaults to true when absent
 	SnippetID    *string  `json:"snippet_id,omitempty"`
 	Environments []string `json:"environments,omitempty"`
+}
+
+// updateSecretRequest is the expected PATCH body for updating a secret/variable.
+type updateSecretRequest struct {
+	Name  *string `json:"name,omitempty"`
+	Value *string `json:"value,omitempty"`
 }
 
 // CreateSecret handles POST /v1/secrets.
@@ -68,7 +75,12 @@ func (h *SecretsHandler) CreateSecret(w http.ResponseWriter, r *http.Request) {
 		req.Environments = []string{}
 	}
 
-	sec, err := h.store.CreateSecret(r.Context(), tenant.ID, req.SnippetID, req.Name, req.Value, req.Environments, h.encKey)
+	isSecret := true
+	if req.IsSecret != nil {
+		isSecret = *req.IsSecret
+	}
+
+	sec, err := h.store.CreateSecret(r.Context(), tenant.ID, req.SnippetID, req.Name, req.Value, isSecret, req.Environments, h.encKey)
 	if err != nil {
 		h.log.Error("create secret failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "failed to create secret")
@@ -99,7 +111,7 @@ func (h *SecretsHandler) ListSecrets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	secrets, err := h.store.ListSecrets(r.Context(), tenant.ID)
+	secrets, err := h.store.ListSecrets(r.Context(), tenant.ID, h.encKey)
 	if err != nil {
 		h.log.Error("list secrets failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "failed to list secrets")
@@ -140,4 +152,37 @@ func (h *SecretsHandler) DeleteSecret(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// UpdateSecret handles PATCH /v1/secrets/{secretID}.
+// Allows updating name and/or value. For credentials (is_secret=true),
+// the new value replaces the existing one without ever exposing the old value.
+func (h *SecretsHandler) UpdateSecret(w http.ResponseWriter, r *http.Request) {
+	tenant := middleware.TenantFromContext(r.Context())
+	if tenant == nil {
+		writeError(w, http.StatusUnauthorized, "unauthenticated")
+		return
+	}
+
+	secretID := chi.URLParam(r, "secretID")
+
+	var req updateSecretRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.Name == nil && req.Value == nil {
+		writeError(w, http.StatusBadRequest, "name or value is required")
+		return
+	}
+
+	sec, err := h.store.UpdateSecret(r.Context(), secretID, tenant.ID, req.Name, req.Value, h.encKey)
+	if err != nil {
+		h.log.Error("update secret failed", zap.String("id", secretID), zap.Error(err))
+		writeError(w, http.StatusNotFound, "secret not found")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, sec)
 }

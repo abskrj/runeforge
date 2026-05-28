@@ -1,0 +1,7 @@
+apps/
+services/executor-runtime/
+services/mcp-server/
+.git/
+node_modules/
+**/*.log
+**/.DS_Store

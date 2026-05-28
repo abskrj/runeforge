@@ -14,7 +14,7 @@ export default function PublishDropdown({ onPublish, disabled }: Props) {
   return (
     <div className="relative">
       <button
-        className="inline-flex items-center gap-1 rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+        className="inline-flex items-center gap-1 rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
       >

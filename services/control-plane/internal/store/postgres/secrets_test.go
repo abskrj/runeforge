@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/runeforge/control-plane/internal/store/postgres"
+	"github.com/abskrj/velane/services/control-plane/internal/store/postgres"
 )
 
 // testEncKey is a fixed 32-byte key for integration tests.

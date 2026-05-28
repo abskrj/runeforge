@@ -4,8 +4,8 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/runeforge/control-plane/internal/api/middleware"
-	"github.com/runeforge/control-plane/internal/models"
+	"github.com/abskrj/velane/services/control-plane/internal/api/middleware"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
 )
 
 // setSessionUser injects a user into the context the same way SessionAuth middleware does.

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/runeforge/control-plane/internal/executor"
+	"github.com/abskrj/velane/services/control-plane/internal/executor"
 )
 
 // egressPolicy mirrors executor.EgressPolicy for JSON serialisation.
@@ -27,6 +27,7 @@ type runRequest struct {
 	TimeoutMs     int               `json:"timeout_ms"`
 	MaxMemoryMB   int               `json:"max_memory_mb"`
 	SecretEnvVars map[string]string `json:"secret_env_vars,omitempty"`
+	Libraries     map[string]string `json:"libraries,omitempty"`
 	EgressPolicy  *egressPolicy     `json:"egress_policy,omitempty"`
 }
 
@@ -68,6 +69,7 @@ func buildRunRequest(spec executor.RunSpec) runRequest {
 		TimeoutMs:     spec.TimeoutMs,
 		MaxMemoryMB:   spec.MaxMemoryMB,
 		SecretEnvVars: spec.SecretEnvVars,
+		Libraries:     spec.Libraries,
 	}
 	if spec.EgressPolicy != nil {
 		req.EgressPolicy = &egressPolicy{

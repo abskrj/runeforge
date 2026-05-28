@@ -6,8 +6,9 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/runeforge/control-plane/internal/audit"
-	"github.com/runeforge/control-plane/internal/models"
+	"github.com/abskrj/velane/services/control-plane/internal/api/middleware"
+	"github.com/abskrj/velane/services/control-plane/internal/audit"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
 	"go.uber.org/zap"
 )
 
@@ -45,6 +46,12 @@ func (h *BrandingHandler) GetBranding(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	authTenant := middleware.TenantFromContext(r.Context())
+	if authTenant == nil || authTenant.ID != tenant.ID {
+		writeError(w, http.StatusForbidden, "access denied")
+		return
+	}
+
 	branding, err := h.store.GetBranding(r.Context(), tenant.ID)
 	if err != nil {
 		h.log.Error("get branding failed", zap.Error(err))
@@ -61,6 +68,12 @@ func (h *BrandingHandler) UpdateBranding(w http.ResponseWriter, r *http.Request)
 	tenant, err := h.store.GetTenantBySlug(r.Context(), slug)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "tenant not found")
+		return
+	}
+
+	authTenant := middleware.TenantFromContext(r.Context())
+	if authTenant == nil || authTenant.ID != tenant.ID {
+		writeError(w, http.StatusForbidden, "access denied")
 		return
 	}
 

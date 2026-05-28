@@ -3,7 +3,7 @@ package observability
 import (
 	"context"
 
-	"github.com/runeforge/control-plane/internal/models"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
 )
 
 // LogStore persists invocation logs in an external store.

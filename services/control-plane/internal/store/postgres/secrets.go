@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/runeforge/control-plane/internal/models"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
 )
 
 // encrypt encrypts plaintext with AES-256-GCM using the provided 32-byte key.
@@ -65,9 +65,9 @@ func decrypt(key []byte, encoded string) (string, error) {
 	return string(plaintext), nil
 }
 
-// CreateSecret encrypts the plainValue and inserts a new secret record.
-// Returns the secret model (without the decrypted value).
-func (s *Store) CreateSecret(ctx context.Context, tenantID string, snippetID *string, name string, plainValue string, environments []string, encKey []byte) (*models.Secret, error) {
+// CreateSecret encrypts the plainValue and inserts a new secret/variable record.
+// When isSecret is false, Value will be returned in list responses.
+func (s *Store) CreateSecret(ctx context.Context, tenantID string, snippetID *string, name string, plainValue string, isSecret bool, environments []string, encKey []byte) (*models.Secret, error) {
 	encrypted, err := encrypt(encKey, plainValue)
 	if err != nil {
 		return nil, fmt.Errorf("encrypt secret: %w", err)
@@ -78,26 +78,31 @@ func (s *Store) CreateSecret(ctx context.Context, tenantID string, snippetID *st
 	}
 
 	row := s.pool.QueryRow(ctx,
-		`INSERT INTO secrets (tenant_id, snippet_id, name, value_encrypted, environments)
-		 VALUES ($1, $2, $3, $4, $5)
-		 RETURNING id, tenant_id, snippet_id, name, environments, created_at`,
-		tenantID, snippetID, name, encrypted, environments,
+		`INSERT INTO secrets (tenant_id, snippet_id, name, value_encrypted, is_secret, environments)
+		 VALUES ($1, $2, $3, $4, $5, $6)
+		 RETURNING id, tenant_id, snippet_id, name, is_secret, environments, created_at, updated_at`,
+		tenantID, snippetID, name, encrypted, isSecret, environments,
 	)
 
 	sec, err := scanSecret(row)
 	if err != nil {
 		return nil, fmt.Errorf("CreateSecret scan: %w", err)
 	}
+	// For variables, populate Value so caller can return it in the response.
+	if !isSecret {
+		sec.Value = &plainValue
+	}
 	return sec, nil
 }
 
-// ListSecrets returns secret metadata for a tenant. The decrypted value is
-// never returned — only name, id, environments, and snippet_id.
-func (s *Store) ListSecrets(ctx context.Context, tenantID string) ([]*models.Secret, error) {
+// ListSecrets returns all variables and credentials for a tenant.
+// For variables (is_secret=false), Value is populated with the decrypted plaintext.
+// For credentials (is_secret=true), Value is nil — values are never returned.
+func (s *Store) ListSecrets(ctx context.Context, tenantID string, encKey []byte) ([]*models.Secret, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT id, tenant_id, snippet_id, name, environments, created_at
+		`SELECT id, tenant_id, snippet_id, name, is_secret, value_encrypted, environments, created_at, updated_at
 		 FROM secrets WHERE tenant_id = $1
-		 ORDER BY created_at DESC`,
+		 ORDER BY is_secret ASC, created_at DESC`,
 		tenantID,
 	)
 	if err != nil {
@@ -107,13 +112,69 @@ func (s *Store) ListSecrets(ctx context.Context, tenantID string) ([]*models.Sec
 
 	var secrets []*models.Secret
 	for rows.Next() {
-		sec, err := scanSecret(rows)
-		if err != nil {
-			return nil, err
+		var sec models.Secret
+		var encrypted string
+		if err := rows.Scan(&sec.ID, &sec.TenantID, &sec.SnippetID, &sec.Name, &sec.IsSecret, &encrypted, &sec.Environments, &sec.CreatedAt, &sec.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("ListSecrets scan: %w", err)
 		}
-		secrets = append(secrets, sec)
+		if sec.Environments == nil {
+			sec.Environments = []string{}
+		}
+		if !sec.IsSecret {
+			plain, err := decrypt(encKey, encrypted)
+			if err != nil {
+				return nil, fmt.Errorf("decrypt variable %q: %w", sec.Name, err)
+			}
+			sec.Value = &plain
+		}
+		secrets = append(secrets, &sec)
 	}
 	return secrets, rows.Err()
+}
+
+// UpdateSecret replaces the name and/or value of an existing secret/variable.
+func (s *Store) UpdateSecret(ctx context.Context, id, tenantID string, name *string, plainValue *string, encKey []byte) (*models.Secret, error) {
+	if name == nil && plainValue == nil {
+		return nil, fmt.Errorf("nothing to update")
+	}
+
+	var encrypted *string
+	if plainValue != nil {
+		enc, err := encrypt(encKey, *plainValue)
+		if err != nil {
+			return nil, fmt.Errorf("encrypt: %w", err)
+		}
+		encrypted = &enc
+	}
+
+	row := s.pool.QueryRow(ctx,
+		`UPDATE secrets SET
+		   name            = COALESCE($3, name),
+		   value_encrypted = COALESCE($4, value_encrypted),
+		   updated_at      = now()
+		 WHERE id = $1 AND tenant_id = $2
+		 RETURNING id, tenant_id, snippet_id, name, is_secret, value_encrypted, environments, created_at, updated_at`,
+		id, tenantID, name, encrypted,
+	)
+
+	var sec models.Secret
+	var encryptedResult string
+	var envs []string
+	if err := row.Scan(&sec.ID, &sec.TenantID, &sec.SnippetID, &sec.Name, &sec.IsSecret, &encryptedResult, &envs, &sec.CreatedAt, &sec.UpdatedAt); err != nil {
+		return nil, fmt.Errorf("UpdateSecret scan: %w", err)
+	}
+	if envs == nil {
+		envs = []string{}
+	}
+	sec.Environments = envs
+	if !sec.IsSecret {
+		plain, err := decrypt(encKey, encryptedResult)
+		if err != nil {
+			return nil, fmt.Errorf("decrypt updated variable: %w", err)
+		}
+		sec.Value = &plain
+	}
+	return &sec, nil
 }
 
 // DeleteSecret removes a secret by ID, scoped to a tenant for safety.
@@ -187,10 +248,10 @@ func DecryptForTest(key []byte, encoded string) (string, error) {
 	return decrypt(key, encoded)
 }
 
-// scanSecret scans a secret row (without value_encrypted).
+// scanSecret scans a secret row from RETURNING clauses (no value_encrypted).
 func scanSecret(s scannable) (*models.Secret, error) {
 	var sec models.Secret
-	if err := s.Scan(&sec.ID, &sec.TenantID, &sec.SnippetID, &sec.Name, &sec.Environments, &sec.CreatedAt); err != nil {
+	if err := s.Scan(&sec.ID, &sec.TenantID, &sec.SnippetID, &sec.Name, &sec.IsSecret, &sec.Environments, &sec.CreatedAt, &sec.UpdatedAt); err != nil {
 		return nil, err
 	}
 	if sec.Environments == nil {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/runeforge/control-plane/internal/models"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
 )
 
 // CreateVersion inserts a new snippet version. The version number is

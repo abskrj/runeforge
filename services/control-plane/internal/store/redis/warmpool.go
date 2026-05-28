@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const poolKeyPrefix = "runeforge:pool:"
+const poolKeyPrefix = "velane:pool:"
 
 func poolKey(snippetID, env string) string {
 	return poolKeyPrefix + snippetID + ":" + env

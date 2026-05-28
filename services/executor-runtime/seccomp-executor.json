@@ -9,7 +9,7 @@
         "pivot_root",
         "kexec_load",
         "kexec_file_load",
-        "perf_event_open",
+        "pevl_event_open",
         "unshare",
         "settimeofday",
         "adjtimex",

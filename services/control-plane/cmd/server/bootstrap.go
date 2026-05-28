@@ -3,9 +3,9 @@ package main
 import (
 	"context"
 
-	"github.com/runeforge/control-plane/internal/auth"
-	"github.com/runeforge/control-plane/internal/config"
-	"github.com/runeforge/control-plane/internal/store/postgres"
+	"github.com/abskrj/velane/services/control-plane/internal/auth"
+	"github.com/abskrj/velane/services/control-plane/internal/config"
+	"github.com/abskrj/velane/services/control-plane/internal/store/postgres"
 	"go.uber.org/zap"
 )
 

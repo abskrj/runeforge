@@ -3,7 +3,7 @@ package auth
 import (
 	"context"
 
-	"github.com/runeforge/control-plane/internal/models"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
 )
 
 // Provider is the auth abstraction. Phase 8 ships PasswordProvider (bcrypt + Postgres sessions).

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/runeforge/control-plane/internal/auth"
-	"github.com/runeforge/control-plane/internal/models"
+	"github.com/abskrj/velane/services/control-plane/internal/auth"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
 )
 
 // mockPasswordStore is a simple in-memory implementation of PasswordStore for testing.

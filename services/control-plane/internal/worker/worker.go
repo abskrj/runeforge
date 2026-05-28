@@ -8,10 +8,10 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/runeforge/control-plane/internal/executor"
-	"github.com/runeforge/control-plane/internal/models"
-	"github.com/runeforge/control-plane/internal/observability"
-	redisstore "github.com/runeforge/control-plane/internal/store/redis"
+	"github.com/abskrj/velane/services/control-plane/internal/executor"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
+	"github.com/abskrj/velane/services/control-plane/internal/observability"
+	redisstore "github.com/abskrj/velane/services/control-plane/internal/store/redis"
 )
 
 // Dequeuer is the interface the worker uses to pull jobs from the queue.
@@ -115,6 +115,7 @@ func (w *Worker) process(ctx context.Context, workerID int, job *redisstore.Job)
 		TimeoutMs:     job.TimeoutMs,
 		MaxMemoryMB:   job.MaxMemoryMB,
 		SecretEnvVars: job.SecretEnvVars,
+		Libraries:     job.Libraries,
 	}
 
 	if job.EgressPolicy != nil {

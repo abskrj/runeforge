@@ -6,9 +6,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/runeforge/mcp-server/internal/controlplane"
-	"github.com/runeforge/mcp-server/internal/server"
-	"github.com/runeforge/mcp-server/internal/tools"
+	"github.com/abskrj/velane/services/mcp-server/internal/controlplane"
+	"github.com/abskrj/velane/services/mcp-server/internal/server"
+	"github.com/abskrj/velane/services/mcp-server/internal/tools"
 )
 
 func main() {

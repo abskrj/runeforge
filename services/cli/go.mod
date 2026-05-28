@@ -1,4 +1,4 @@
-module github.com/runeforge/cli
+module github.com/abskrj/velane/services/cli
 
 go 1.22
 

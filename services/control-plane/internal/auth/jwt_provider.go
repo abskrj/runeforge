@@ -10,12 +10,12 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/runeforge/control-plane/internal/models"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
 	"golang.org/x/crypto/bcrypt"
 )
 
-// runeforgeClaims are the JWT claims embedded in access tokens.
-type runeforgeClaims struct {
+// velaneClaims are the JWT claims embedded in access tokens.
+type velaneClaims struct {
 	Email string `json:"email"`
 	jwt.RegisteredClaims
 }
@@ -88,7 +88,7 @@ func (p *JWTProvider) Authenticate(ctx context.Context, email, password string) 
 
 // ValidateSession validates the RS256 JWT access token (stateless — no DB lookup).
 func (p *JWTProvider) ValidateSession(ctx context.Context, rawToken string) (*models.User, error) {
-	claims := &runeforgeClaims{}
+	claims := &velaneClaims{}
 	token, err := jwt.ParseWithClaims(rawToken, claims, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
@@ -100,6 +100,11 @@ func (p *JWTProvider) ValidateSession(ctx context.Context, rawToken string) (*mo
 	}
 	if !token.Valid {
 		return nil, fmt.Errorf("token is not valid")
+	}
+
+	issuer, err := claims.GetIssuer()
+	if err != nil || issuer != p.issuer {
+		return nil, fmt.Errorf("invalid token issuer")
 	}
 
 	sub, err := claims.GetSubject()
@@ -149,7 +154,7 @@ func (p *JWTProvider) Refresh(ctx context.Context, rawRefreshToken string) (*Aut
 // IssueAccessToken creates a signed RS256 JWT with claims: sub=userID, email, iss, iat, exp.
 func (p *JWTProvider) IssueAccessToken(user *models.User) (string, time.Time, error) {
 	expiresAt := time.Now().Add(15 * time.Minute)
-	claims := runeforgeClaims{
+	claims := velaneClaims{
 		Email: user.Email,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   user.ID,

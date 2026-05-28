@@ -94,7 +94,7 @@ export default function APIKeysPage() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-400 focus:outline-none"
               placeholder="e.g. CI deploy key"
             />
           </div>
@@ -117,7 +117,7 @@ export default function APIKeysPage() {
           <button
             type="submit"
             disabled={creating}
-            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+            className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
           >
             {creating ? 'Creating...' : 'Create Key'}
           </button>
@@ -146,7 +146,7 @@ export default function APIKeysPage() {
               {keys.map((k) => (
                 <tr key={k.id} className="border-b border-gray-100 last:border-0">
                   <td className="px-4 py-3 font-medium text-gray-900">{k.name}</td>
-                  <td className="px-4 py-3 font-mono text-gray-600">rf_{k.key_prefix}…</td>
+                  <td className="px-4 py-3 font-mono text-gray-600">vl_{k.key_prefix}…</td>
                   <td className="px-4 py-3 text-gray-600">{k.scopes.join(', ')}</td>
                   <td className="px-4 py-3 text-gray-500">
                     {new Date(k.created_at).toLocaleDateString()}

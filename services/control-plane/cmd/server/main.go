@@ -9,17 +9,18 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/runeforge/control-plane/internal/api"
-	"github.com/runeforge/control-plane/internal/auth"
-	"github.com/runeforge/control-plane/internal/config"
-	"github.com/runeforge/control-plane/internal/executor"
-	"github.com/runeforge/control-plane/internal/executor/firecracker"
-	"github.com/runeforge/control-plane/internal/executor/remote"
-	"github.com/runeforge/control-plane/internal/observability"
-	"github.com/runeforge/control-plane/internal/scheduler"
-	"github.com/runeforge/control-plane/internal/store/postgres"
-	redisstore "github.com/runeforge/control-plane/internal/store/redis"
-	"github.com/runeforge/control-plane/internal/worker"
+	"github.com/abskrj/velane/services/control-plane/internal/api"
+	"github.com/abskrj/velane/services/control-plane/internal/auth"
+	"github.com/abskrj/velane/services/control-plane/internal/config"
+	"github.com/abskrj/velane/services/control-plane/internal/executor"
+	"github.com/abskrj/velane/services/control-plane/internal/executor/firecracker"
+	"github.com/abskrj/velane/services/control-plane/internal/executor/remote"
+	"github.com/abskrj/velane/services/control-plane/internal/observability"
+	"github.com/abskrj/velane/services/control-plane/internal/platformlibs"
+	"github.com/abskrj/velane/services/control-plane/internal/scheduler"
+	"github.com/abskrj/velane/services/control-plane/internal/store/postgres"
+	redisstore "github.com/abskrj/velane/services/control-plane/internal/store/redis"
+	"github.com/abskrj/velane/services/control-plane/internal/worker"
 	"go.uber.org/zap"
 )
 
@@ -34,7 +35,7 @@ func main() {
 
 	// --- Config ---
 	cfg := config.Load()
-	log.Info("starting runeforge control-plane",
+	log.Info("starting velane control-plane",
 		zap.String("port", cfg.Port),
 		zap.String("bun_executor", cfg.BunExecutorURL),
 		zap.String("python_executor", cfg.PythonExecutorURL),
@@ -57,9 +58,16 @@ func main() {
 	defer store.Close()
 	log.Info("postgres connected and migrations applied")
 
+	// --- Platform libraries (embedded in binary) ---
+	platLibs, err := platformlibs.Load()
+	if err != nil {
+		log.Fatal("failed to load platform libraries", zap.Error(err))
+	}
+	log.Info("platform libraries loaded", zap.Int("count", len(platLibs)))
+
 	// --- Auth provider (needed early for bootstrap) ---
 	privKey, pubKey := cfg.JWTKeyPair(log)
-	authProvider := auth.NewJWTProvider(store, privKey, "https://api.runeforge.io")
+	authProvider := auth.NewJWTProvider(store, privKey, "https://api.velane.io")
 
 	// --- Bootstrap first admin (no-op if users already exist or env vars not set) ---
 	bootstrapAdminIfNeeded(ctx, store, authProvider, cfg, log)
@@ -94,11 +102,11 @@ func main() {
 			zap.String("redis_url", cfg.RedisURL),
 			zap.Error(err),
 		)
-		sched = scheduler.New(store, exec, encKey)
+		sched = scheduler.New(store, exec, encKey, platLibs)
 	} else {
 		redisClient = rc
 		log.Info("redis connected", zap.String("redis_url", cfg.RedisURL))
-		sched = scheduler.NewWithQueue(store, exec, redisClient, encKey)
+		sched = scheduler.NewWithQueue(store, exec, redisClient, encKey, platLibs)
 	}
 	sched.SetObserver(observer)
 
@@ -111,7 +119,7 @@ func main() {
 	}
 
 	// --- Router ---
-	router := api.NewRouterWithJWT(store, sched, log, encKey, authProvider, pubKey)
+	router := api.NewRouterWithJWT(store, sched, log, encKey, authProvider, pubKey, platLibs)
 
 	// --- HTTP server ---
 	srv := &http.Server{

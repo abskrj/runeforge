@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/runeforge/control-plane/internal/executor"
-	"github.com/runeforge/control-plane/internal/executor/firecracker"
+	"github.com/abskrj/velane/services/control-plane/internal/executor"
+	"github.com/abskrj/velane/services/control-plane/internal/executor/firecracker"
 	"go.uber.org/zap"
 )
 

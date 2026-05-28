@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Trash2 } from 'lucide-react'
+import { Plus, Trash2, FileCode2, AlertCircle } from 'lucide-react'
 import { api } from '../lib/api'
 import type { Snippet } from '../types'
 import LanguageBadge from '../components/LanguageBadge'
@@ -66,33 +66,42 @@ export default function SnippetsPage() {
 
   return (
     <div>
-      <div className="mb-8 flex items-center justify-between">
+      <div className="mb-8 flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Snippets</h1>
-          <p className="mt-1 text-sm text-gray-500">Manage your code snippets and deployments</p>
+          <h1 className="text-3xl font-bold text-gray-900">Snippets</h1>
+          <p className="mt-1.5 text-sm text-gray-500">Manage your code snippets and deployments.</p>
         </div>
         <button
-          className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+          className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800"
           onClick={() => setShowModal(true)}
         >
-          <Plus size={16} />
+          <Plus size={15} />
           New Snippet
         </button>
       </div>
 
       {error && (
-        <div className="mb-6 rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>
+        <div className="mb-6 flex items-center gap-2.5 rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
+          <AlertCircle size={16} className="shrink-0" />
+          {error}
+        </div>
       )}
 
       {loading && (
-        <p className="text-sm text-gray-500">Loading snippets...</p>
+        <p className="text-sm text-gray-400">Loading snippets...</p>
       )}
 
       {!loading && snippets.length === 0 && (
-        <div className="rounded-lg border border-dashed border-gray-300 bg-white py-16 text-center">
-          <p className="text-gray-500">No snippets yet.</p>
+        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 bg-white py-24">
+          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100">
+            <FileCode2 size={22} className="text-gray-400" />
+          </div>
+          <p className="text-base font-semibold text-gray-800">No snippets yet</p>
+          <p className="mt-1.5 max-w-xs text-center text-sm text-gray-500">
+            You haven't created any snippets. Create one to get started with your deployments.
+          </p>
           <button
-            className="mt-4 text-sm font-medium text-indigo-600 hover:underline"
+            className="mt-6 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
             onClick={() => setShowModal(true)}
           >
             Create your first snippet
@@ -151,7 +160,7 @@ export default function SnippetsPage() {
             <div className="mb-4">
               <label className="mb-1 block text-sm font-medium text-gray-700">Name</label>
               <input
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400"
                 placeholder="My Snippet"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
@@ -162,7 +171,7 @@ export default function SnippetsPage() {
             <div className="mb-4">
               <label className="mb-1 block text-sm font-medium text-gray-700">Language</label>
               <select
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400"
                 value={newLanguage}
                 onChange={(e) => setNewLanguage(e.target.value as 'bun' | 'python')}
               >
@@ -176,7 +185,7 @@ export default function SnippetsPage() {
                 Description <span className="font-normal text-gray-400">(optional)</span>
               </label>
               <input
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400"
                 placeholder="What does this snippet do?"
                 value={newDescription}
                 onChange={(e) => setNewDescription(e.target.value)}
@@ -191,7 +200,7 @@ export default function SnippetsPage() {
                 Cancel
               </button>
               <button
-                className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
                 onClick={handleCreate}
                 disabled={creating || !newName.trim()}
               >

@@ -63,7 +63,7 @@ export default function BrandingPage() {
                 type="url"
                 value={branding.logo_url ?? ''}
                 onChange={(e) => setBranding((b) => ({ ...b, logo_url: e.target.value }))}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-400 focus:outline-none"
                 placeholder="https://example.com/logo.png"
               />
               {branding.logo_url && (
@@ -89,7 +89,7 @@ export default function BrandingPage() {
                   type="text"
                   value={branding.accent_color ?? ''}
                   onChange={(e) => setBranding((b) => ({ ...b, accent_color: e.target.value }))}
-                  className="w-32 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+                  className="w-32 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-400 focus:outline-none"
                   placeholder="#6366f1"
                 />
               </div>
@@ -101,7 +101,7 @@ export default function BrandingPage() {
                 type="text"
                 value={branding.font_family ?? ''}
                 onChange={(e) => setBranding((b) => ({ ...b, font_family: e.target.value }))}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-400 focus:outline-none"
                 placeholder="Inter, sans-serif"
               />
             </div>
@@ -112,11 +112,11 @@ export default function BrandingPage() {
                 type="text"
                 value={branding.custom_domain ?? ''}
                 onChange={(e) => setBranding((b) => ({ ...b, custom_domain: e.target.value }))}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-400 focus:outline-none"
                 placeholder="snippets.yourcompany.com"
               />
               <p className="mt-1 text-xs text-gray-400">
-                Add a CNAME record pointing to embed.runeforge.io to use a custom domain.
+                Add a CNAME record pointing to embed.velane.io to use a custom domain.
               </p>
             </div>
 
@@ -126,10 +126,10 @@ export default function BrandingPage() {
                 type="checkbox"
                 checked={branding.hide_branding ?? false}
                 onChange={(e) => setBranding((b) => ({ ...b, hide_branding: e.target.checked }))}
-                className="h-4 w-4 rounded border-gray-300 text-indigo-600"
+                className="h-4 w-4 rounded border-gray-300 text-gray-900"
               />
               <label htmlFor="hide-branding" className="text-sm font-medium text-gray-700">
-                Hide Runeforge branding
+                Hide Velane branding
               </label>
             </div>
           </div>
@@ -137,7 +137,7 @@ export default function BrandingPage() {
           <button
             type="submit"
             disabled={saving}
-            className="rounded-md bg-indigo-600 px-6 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+            className="rounded-md bg-gray-900 px-6 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
           >
             {saving ? 'Saving...' : 'Save Branding'}
           </button>
@@ -167,7 +167,7 @@ export default function BrandingPage() {
           />
           <p className="text-xs text-gray-600">Sample embed content</p>
           {!branding.hide_branding && (
-            <p className="mt-2 text-xs text-gray-400">Powered by Runeforge</p>
+            <p className="mt-2 text-xs text-gray-400">Powered by Velane</p>
           )}
         </div>
       </div>

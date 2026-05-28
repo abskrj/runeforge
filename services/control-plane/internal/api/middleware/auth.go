@@ -5,13 +5,14 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/runeforge/control-plane/internal/models"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
 	"go.uber.org/zap"
 )
 
 // AuthStore is the subset of *postgres.Store that the auth middleware needs.
 type AuthStore interface {
 	ValidateAPIKey(ctx context.Context, plain string) (*models.APIKey, error)
+	ValidateEmbedToken(ctx context.Context, plain string) (*models.EmbedToken, error)
 	GetTenantByID(ctx context.Context, id string) (*models.Tenant, error)
 }
 
@@ -59,6 +60,31 @@ func Auth(store AuthStore, log *zap.Logger) func(http.Handler) http.Handler {
 			plain, ok := bearerToken(r)
 			if !ok {
 				writeUnauthorized(w, "missing or malformed Authorization header")
+				return
+			}
+
+			// Embed tokens (et_) are accepted as admin-scoped credentials so that
+			// the embedded admin UI can perform full CRUD operations.
+			if strings.HasPrefix(plain, "et_") {
+				embedTok, err := store.ValidateEmbedToken(r.Context(), plain)
+				if err != nil {
+					log.Debug("embed token validation failed", zap.Error(err))
+					writeUnauthorized(w, "invalid embed token")
+					return
+				}
+				tenant, err := store.GetTenantByID(r.Context(), embedTok.TenantID)
+				if err != nil {
+					log.Error("tenant lookup failed for embed token", zap.String("tenant_id", embedTok.TenantID), zap.Error(err))
+					writeUnauthorized(w, "invalid embed token")
+					return
+				}
+				syntheticKey := &models.APIKey{
+					TenantID: embedTok.TenantID,
+					Scopes:   []string{"invoke", "manage"},
+				}
+				ctx := context.WithValue(r.Context(), tenantKey, tenant)
+				ctx = context.WithValue(ctx, apikeyKey, syntheticKey)
+				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
 

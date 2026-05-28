@@ -3,14 +3,17 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"regexp"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/runeforge/control-plane/internal/api/middleware"
-	"github.com/runeforge/control-plane/internal/audit"
-	"github.com/runeforge/control-plane/internal/models"
-	"github.com/runeforge/control-plane/internal/store/postgres"
+	"github.com/abskrj/velane/services/control-plane/internal/api/middleware"
+	"github.com/abskrj/velane/services/control-plane/internal/audit"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
+	"github.com/abskrj/velane/services/control-plane/internal/store/postgres"
 	"go.uber.org/zap"
 )
+
+var slugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$`)
 
 // TenantsHandler bundles all tenant-related HTTP handlers.
 type TenantsHandler struct {
@@ -50,6 +53,10 @@ func (h *TenantsHandler) CreateTenant(w http.ResponseWriter, r *http.Request) {
 
 	if req.Name == "" || req.Slug == "" {
 		writeError(w, http.StatusBadRequest, "name and slug are required")
+		return
+	}
+	if !slugRe.MatchString(req.Slug) {
+		writeError(w, http.StatusBadRequest, "slug must be 3-63 lowercase alphanumeric characters or hyphens, and cannot start or end with a hyphen")
 		return
 	}
 

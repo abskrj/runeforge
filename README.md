@@ -1,8 +1,8 @@
-# Runeforge
+# Velane
 
 **AI Agent Code Runtime** — write Bun or Python snippets, expose them as POST APIs, run them at scale in secure sandboxed runtimes.
 
-Runeforge is an open-source, multi-tenant platform that lets AI agent engineers deploy code snippets as callable HTTP endpoints — with versioning, secrets injection, canary traffic splitting, streaming, an admin dashboard, and native MCP integration for Cursor and Claude Code.
+Velane is an open-source, multi-tenant platform that lets AI agent engineers deploy code snippets as callable HTTP endpoints — with versioning, secrets injection, canary traffic splitting, streaming, an admin dashboard, and native MCP integration for Cursor and Claude Code.
 
 ---
 
@@ -18,7 +18,7 @@ Runeforge is an open-source, multi-tenant platform that lets AI agent engineers 
 - **Observability** — per-invocation logs (S3/MinIO), metrics (ClickHouse), and invocation replay
 - **Admin portal** — self-serve dashboard for snippet editing, API key management, team invites, branding, usage, and egress config
 - **Embeddable dashboard** — iframe-safe read-only snippet browser with white-label theming
-- **MCP server** — connect Cursor or Claude Code directly to Runeforge to generate and deploy snippets without leaving your IDE
+- **MCP server** — connect Cursor or Claude Code directly to Velane to generate and deploy snippets without leaving your IDE
 - **Git push-to-deploy** — connect a GitHub repo; push to `main` → staging, tag `v*` → prod
 - **JWT auth** — RS256 access tokens (15 min) + refresh tokens; JWKS endpoint for third-party verification
 - **Firecracker executor** — optional VM-boundary isolation via AWS Firecracker (requires KVM; enabled with `EXECUTOR_TYPE=firecracker`)
@@ -68,8 +68,8 @@ Runeforge is an open-source, multi-tenant platform that lets AI agent engineers 
 ### 1. Clone and configure
 
 ```bash
-git clone https://github.com/abskrj/runeforge.git
-cd runeforge
+git clone https://github.com/abskrj/velane.git
+cd velane
 ```
 
 Open `docker-compose.yml` and uncomment the bootstrap vars to seed your first admin user:
@@ -116,7 +116,7 @@ Log into the admin portal at http://localhost:8092 with the credentials from the
 ### Via the API
 
 ```bash
-KEY=rf_xxxx   # your API key
+KEY=vl_xxxx   # your API key
 TENANT=myorg
 
 # Create a snippet
@@ -148,12 +148,12 @@ curl -s -X POST http://localhost:8080/v1/invoke/$TENANT/$SNIPPET \
 ### Via the CLI
 
 ```bash
-cd services/cli && go build -o runeforge .
+cd services/cli && go build -o velane .
 
-./runeforge login --key rf_xxxx --tenant myorg --api-url http://localhost:8080
-./runeforge snippets push handler.ts --publish dev
-./runeforge invoke <snippet-id> --input '{"name":"world"}'
-./runeforge invoke <snippet-id> --stream   # SSE streaming
+./velane login --key vl_xxxx --tenant myorg --api-url http://localhost:8080
+./velane snippets push handler.ts --publish dev
+./velane invoke <snippet-id> --input '{"name":"world"}'
+./velane invoke <snippet-id> --stream   # SSE streaming
 ```
 
 ---
@@ -191,9 +191,9 @@ Add to `.cursor/mcp.json` or `~/.claude/mcp.json`:
 ```json
 {
   "mcpServers": {
-    "runeforge": {
+    "velane": {
       "url": "http://localhost:8090/mcp",
-      "headers": { "Authorization": "Bearer rf_xxxx" }
+      "headers": { "Authorization": "Bearer vl_xxxx" }
     }
   }
 }
@@ -255,7 +255,7 @@ Configure your GitHub webhook to point at `http://your-host:8080/v1/webhooks/git
 
 | Token type | Header | Used for |
 |-----------|--------|---------|
-| API key | `Authorization: Bearer rf_xxxx` | All management + invocation |
+| API key | `Authorization: Bearer vl_xxxx` | All management + invocation |
 | JWT access token | `Authorization: Bearer <jwt>` | Admin portal sessions |
 | Embed token | `Authorization: Bearer et_xxxx` | Embed endpoints only |
 
@@ -330,7 +330,7 @@ GET    /.well-known/jwks.json
 ## Project Structure
 
 ```
-runeforge/
+velane/
 ├── services/
 │   ├── control-plane/          # Go API server (chi, pgx, zap)
 │   │   ├── cmd/server/         # main.go, bootstrap.go
@@ -352,7 +352,7 @@ runeforge/
 │   │   ├── bun/                # Bun HTTP server (runner.ts)
 │   │   └── python/             # Python FastAPI server (runner.py)
 │   ├── mcp-server/             # MCP protocol server (HTTP/SSE + stdio)
-│   └── cli/                    # runeforge CLI (cobra)
+│   └── cli/                    # velane CLI (cobra)
 └── apps/
     ├── admin/                  # Admin portal — snippet editor + management (Vite + React)
     └── embed-dashboard/        # Embeddable iframe viewer (Vite + React)
@@ -370,7 +370,7 @@ cd services/control-plane
 go test ./...
 
 # With integration tests (requires Postgres + Redis)
-TEST_DATABASE_URL=postgres://runeforge:runeforge@localhost:5432/runeforge \
+TEST_DATABASE_URL=postgres://velane:velane@localhost:5432/velane \
 TEST_REDIS_URL=localhost:6379 \
 go test ./...
 
@@ -406,7 +406,7 @@ make tidy    # go mod tidy
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DATABASE_URL` | `postgres://runeforge:runeforge@localhost:5432/runeforge` | Postgres DSN |
+| `DATABASE_URL` | `postgres://velane:velane@localhost:5432/velane` | Postgres DSN |
 | `REDIS_URL` | `localhost:6379` | Redis address |
 | `BUN_EXECUTOR_URL` | `http://localhost:8081` | Bun executor URL |
 | `PYTHON_EXECUTOR_URL` | `http://localhost:8082` | Python executor URL |
@@ -416,7 +416,7 @@ make tidy    # go mod tidy
 | `JWT_PRIVATE_KEY` | *(ephemeral)* | RS256 private key PEM |
 | `EXECUTOR_TYPE` | `process` | `process` or `firecracker` |
 | `S3_ENDPOINT` | *(AWS)* | S3-compatible endpoint (e.g. `http://minio:9000`) |
-| `S3_BUCKET` | `runeforge-logs` | Bucket for invocation logs |
+| `S3_BUCKET` | `velane-logs` | Bucket for invocation logs |
 | `CLICKHOUSE_ADDR` | — | ClickHouse native address |
 | `REPLAY_ENABLED` | `false` | Store input payloads for invocation replay |
 | `BOOTSTRAP_EMAIL` | — | First-boot admin email (remove after first start) |
@@ -429,7 +429,7 @@ make tidy    # go mod tidy
 
 ## Firecracker (VM-boundary isolation)
 
-For hardware-level isolation, Runeforge supports [AWS Firecracker](https://firecracker-microvm.github.io/) microVMs:
+For hardware-level isolation, Velane supports [AWS Firecracker](https://firecracker-microvm.github.io/) microVMs:
 
 ```yaml
 EXECUTOR_TYPE: firecracker
@@ -470,4 +470,9 @@ All Go changes must pass `go vet ./...` and `go test ./...`. Frontend changes sh
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Velane is dual-licensed:
+
+- **AGPLv3** (open source) — free to use, modify, and self-host under the terms of the [GNU Affero General Public License v3.0](LICENSE). Any modifications you deploy over a network must also be released under AGPLv3.
+- **Commercial license** — if you want to use Velane in a proprietary product, embed it in a SaaS offering, or cannot comply with AGPLv3's copyleft requirements, a commercial license is available. Contact **abskrj@icloud.com** to discuss pricing.
+
+> **In short:** build on it freely if you open-source your work. Pay for a commercial license if you keep your code closed.

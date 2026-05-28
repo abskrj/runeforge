@@ -9,7 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/runeforge/control-plane/internal/executor"
+	"github.com/abskrj/velane/services/control-plane/internal/executor"
 	"go.uber.org/zap"
 )
 

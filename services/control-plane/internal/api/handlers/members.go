@@ -10,8 +10,9 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/runeforge/control-plane/internal/audit"
-	"github.com/runeforge/control-plane/internal/models"
+	"github.com/abskrj/velane/services/control-plane/internal/api/middleware"
+	"github.com/abskrj/velane/services/control-plane/internal/audit"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
 	"go.uber.org/zap"
 )
 
@@ -51,6 +52,12 @@ func (h *MembersHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	authTenant := middleware.TenantFromContext(r.Context())
+	if authTenant == nil || authTenant.ID != tenant.ID {
+		writeError(w, http.StatusForbidden, "access denied")
+		return
+	}
+
 	members, err := h.store.ListMembers(r.Context(), tenant.ID)
 	if err != nil {
 		h.log.Error("list members failed", zap.Error(err))
@@ -75,6 +82,12 @@ func (h *MembersHandler) InviteMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	authTenant := middleware.TenantFromContext(r.Context())
+	if authTenant == nil || authTenant.ID != tenant.ID {
+		writeError(w, http.StatusForbidden, "access denied")
+		return
+	}
+
 	var req inviteMemberRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -86,6 +99,12 @@ func (h *MembersHandler) InviteMember(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Role == "" {
 		req.Role = "manage"
+	}
+	switch req.Role {
+	case "invoke", "manage", "admin":
+	default:
+		writeError(w, http.StatusBadRequest, "role must be one of: invoke, manage, admin")
+		return
 	}
 
 	rawToken, tokenHash := generateInviteToken()
@@ -127,6 +146,12 @@ func (h *MembersHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	authTenant := middleware.TenantFromContext(r.Context())
+	if authTenant == nil || authTenant.ID != tenant.ID {
+		writeError(w, http.StatusForbidden, "access denied")
+		return
+	}
+
 	if err := h.store.RemoveMember(r.Context(), tenant.ID, userID); err != nil {
 		h.log.Error("remove member failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "failed to remove member")
@@ -153,6 +178,12 @@ func (h *MembersHandler) ListInvites(w http.ResponseWriter, r *http.Request) {
 	tenant, err := h.store.GetTenantBySlug(r.Context(), slug)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "tenant not found")
+		return
+	}
+
+	authTenant := middleware.TenantFromContext(r.Context())
+	if authTenant == nil || authTenant.ID != tenant.ID {
+		writeError(w, http.StatusForbidden, "access denied")
 		return
 	}
 

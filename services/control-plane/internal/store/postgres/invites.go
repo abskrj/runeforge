@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/runeforge/control-plane/internal/models"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
 )
 
 // CreateInvite inserts a new invite_tokens row.

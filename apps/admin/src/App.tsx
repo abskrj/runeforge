@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useSearchParams } from 'react-router-dom'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import DashboardLayout from './components/DashboardLayout'
@@ -11,15 +11,27 @@ import EgressPage from './pages/EgressPage'
 import SnippetsPage from './pages/SnippetsPage'
 import SnippetEditorPage from './pages/SnippetEditorPage'
 import EmbedPage from './pages/EmbedPage'
+import EmbedEntryPage from './pages/EmbedEntryPage'
+import VariablesPage from './pages/VariablesPage'
+import LibrariesPage from './pages/LibrariesPage'
+import LibraryEditorPage from './pages/LibraryEditorPage'
 import ProtectedRoute from './components/ProtectedRoute'
+
+function RootRedirect() {
+  const [params] = useSearchParams()
+  if (params.get('token')?.startsWith('et_')) {
+    return <EmbedEntryPage />
+  }
+  return <Navigate to="/dashboard/overview" replace />
+}
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route path="/" element={<RootRedirect />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
-        <Route path="/" element={<Navigate to="/dashboard/overview" replace />} />
         <Route
           path="/dashboard"
           element={
@@ -37,6 +49,9 @@ export default function App() {
           <Route path="egress" element={<EgressPage />} />
           <Route path="snippets" element={<SnippetsPage />} />
           <Route path="snippets/:id" element={<SnippetEditorPage />} />
+          <Route path="libraries" element={<LibrariesPage />} />
+          <Route path="libraries/:id" element={<LibraryEditorPage />} />
+          <Route path="variables" element={<VariablesPage />} />
           <Route path="embed" element={<EmbedPage />} />
         </Route>
       </Routes>

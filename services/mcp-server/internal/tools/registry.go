@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/runeforge/mcp-server/internal/controlplane"
+	"github.com/abskrj/velane/services/mcp-server/internal/controlplane"
 )
 
 type Handler func(ctx context.Context, authHeader string, args map[string]any) (any, error)

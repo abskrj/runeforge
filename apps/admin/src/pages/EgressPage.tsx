@@ -103,7 +103,7 @@ export default function EgressPage() {
               value={newCIDR}
               onChange={(e) => setNewCIDR(e.target.value)}
               onKeyDown={handleKeyDown(addCIDR)}
-              className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+              className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-400 focus:outline-none"
               placeholder="10.0.0.0/8"
             />
             <button
@@ -138,7 +138,7 @@ export default function EgressPage() {
               value={newDomain}
               onChange={(e) => setNewDomain(e.target.value)}
               onKeyDown={handleKeyDown(addDomain)}
-              className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+              className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-400 focus:outline-none"
               placeholder="example.com"
             />
             <button
@@ -154,7 +154,7 @@ export default function EgressPage() {
         <button
           type="submit"
           disabled={saving}
-          className="rounded-md bg-indigo-600 px-6 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+          className="rounded-md bg-gray-900 px-6 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
         >
           {saving ? 'Saving...' : 'Save Policy'}
         </button>

@@ -11,8 +11,8 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/runeforge/control-plane/internal/models"
-	"github.com/runeforge/control-plane/internal/scheduler"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
+	"github.com/abskrj/velane/services/control-plane/internal/scheduler"
 	"go.uber.org/zap"
 )
 

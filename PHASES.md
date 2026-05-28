@@ -1,6 +1,6 @@
-# Runeforge — Build Phases
+# Velane — Build Phases
 
-This document tracks the phased implementation plan for Runeforge. Each phase delivers a working, shippable increment. Phases build on each other — complete Phase N before starting Phase N+1.
+This document tracks the phased implementation plan for Velane. Each phase delivers a working, shippable increment. Phases build on each other — complete Phase N before starting Phase N+1.
 
 ---
 
@@ -105,19 +105,19 @@ snippet_environments.canary_pct
 ### Delivered
 
 - **Web IDE** — Monaco editor in React; syntax highlighting for Bun/Python; inline error display; test-invoke panel; version history sidebar; publish button with env selector
-- **CLI tool** (`runeforge` binary, distributed via npm and Homebrew)
+- **CLI tool** (`velane` binary, distributed via npm and Homebrew)
   ```
-  runeforge login               # authenticate, store key in system keychain
-  runeforge snippets list
-  runeforge snippets push <file>  # create/update draft, optionally publish
-  runeforge invoke <slug> [--env prod] [--input '{}']
-  runeforge logs <slug>
+  velane login               # authenticate, store key in system keychain
+  velane snippets list
+  velane snippets push <file>  # create/update draft, optionally publish
+  velane invoke <slug> [--env prod] [--input '{}']
+  velane logs <slug>
   ```
 - **Git webhook integration** — connect a GitHub/GitLab repo; push to `main` → deploy to `staging`; push a tag (`v*`) → deploy to `prod`; PR branch → deploy to `dev` (preview env)
 
 ### New services
 
-- `web-ide/` — Vite + React SPA, deployed to `app.runeforge.io`
+- `web-ide/` — Vite + React SPA, deployed to `app.velane.io`
 - `cli/` — Go CLI (cobra), distributed as single binary
 - Webhook receiver endpoint on control plane: `POST /v1/webhooks/git`
 
@@ -153,7 +153,7 @@ snippet_environments.canary_pct
 
 ## Phase 6 — MCP Server (Cursor / Claude Code Integration) (complete)
 
-**Goal:** Let engineers connect Cursor, Claude Code, or any MCP-compatible AI agent directly to Runeforge to generate and deploy snippets without leaving their IDE.
+**Goal:** Let engineers connect Cursor, Claude Code, or any MCP-compatible AI agent directly to Velane to generate and deploy snippets without leaving their IDE.
 
 ### Delivered
 
@@ -191,9 +191,9 @@ snippet_environments.canary_pct
 // .cursor/mcp.json or ~/.claude/mcp.json
 {
   "mcpServers": {
-    "runeforge": {
-      "url": "https://api.runeforge.io/mcp",
-      "headers": { "Authorization": "Bearer rf_xxxx" }
+    "velane": {
+      "url": "https://api.velane.io/mcp",
+      "headers": { "Authorization": "Bearer vl_xxxx" }
     }
   }
 }
@@ -212,7 +212,7 @@ snippet_environments.canary_pct
 ### Scope
 
 - **Embed token API** — `POST /v1/embed/tokens` issues short-lived, read-only tokens scoped to a tenant (optionally to specific snippet IDs)
-- **Embed app** — React SPA served from `embed.runeforge.io`:
+- **Embed app** — React SPA served from `embed.velane.io`:
   - Snippet list with search, language filter, env filter
   - Snippet detail: code viewer (Monaco, read-only), version sidebar, env status badges, recent invocations summary, p95 latency badge
   - Environment switcher (dev / staging / prod)
@@ -223,7 +223,7 @@ snippet_environments.canary_pct
 
 ```html
 <iframe
-  src="https://embed.runeforge.io?token=et_xxxx"
+  src="https://embed.velane.io?token=et_xxxx"
   width="100%"
   height="700"
   frameborder="0"
@@ -232,13 +232,13 @@ snippet_environments.canary_pct
 
 ### New services
 
-- `services/embed-dashboard/` — Vite + React, deployed to `embed.runeforge.io`
+- `services/embed-dashboard/` — Vite + React, deployed to `embed.velane.io`
 
 ---
 
 ## Phase 8 — Tenant Admin Dashboard & White-Label (complete)
 
-**Goal:** Give each tenant org a self-serve admin dashboard to manage their Runeforge account, configure white-label branding for the embedded dashboard, and govern their engineers' access.
+**Goal:** Give each tenant org a self-serve admin dashboard to manage their Velane account, configure white-label branding for the embedded dashboard, and govern their engineers' access.
 
 ### Delivered
 
@@ -296,7 +296,7 @@ DELETE /v1/tenants/{slug}/api-keys/{id} → revoke key (admin scope)
 
 ### New services
 
-- `apps/admin/` — Vite + React SPA, deployable to `admin.runeforge.io`
+- `apps/admin/` — Vite + React SPA, deployable to `admin.velane.io`
 
 ### Relationship to Phase 7 embed
 
@@ -312,7 +312,7 @@ Phase 7 builds the embed app and accepts branding config as URL params. Phase 8 
 
 - **JWT auth (RS256)** — replaces Postgres session tokens with stateless RS256 JWTs; access token 15min, refresh token 7d stored in Postgres with rotation; JWKS endpoint at `GET /.well-known/jwks.json`; ephemeral key generated with warning if `JWT_PRIVATE_KEY` not set
 - **Firecracker executor plugin** — optional `Executor` interface implementation via `EXECUTOR_TYPE=firecracker`; requires `/dev/kvm`; full interface with documented VM lifecycle (jailer → kernel boot → vsock → result); stub implementation compiles and is interface-complete; real Firecracker binary + rootfs images needed for bare-metal deployment
-- **Seccomp profile for executor containers** — `services/executor-runtime/seccomp-executor.json`; blocks `ptrace`, `mount`, `CLONE_NEWUSER`, `perf_event_open`, `kexec`, `settimeofday`, kernel module ops, and more; applied to `bun-executor` and `python-executor` in `docker-compose.yml`
+- **Seccomp profile for executor containers** — `services/executor-runtime/seccomp-executor.json`; blocks `ptrace`, `mount`, `CLONE_NEWUSER`, `pevl_event_open`, `kexec`, `settimeofday`, kernel module ops, and more; applied to `bun-executor` and `python-executor` in `docker-compose.yml`
 - **Audit log** — append-only Postgres table (`audit_log`); all management actions logged (publish, secret_create, secret_delete, egress_update, member_invite, member_remove, api_key_create, api_key_revoke, branding_update, canary_set, canary_clear); fire-and-forget logger; queryable via `GET /v1/tenants/{slug}/audit-log` (admin scope)
 - **OpenAPI generation**: deferred
 

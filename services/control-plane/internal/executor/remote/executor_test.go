@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/runeforge/control-plane/internal/executor"
-	"github.com/runeforge/control-plane/internal/executor/remote"
+	"github.com/abskrj/velane/services/control-plane/internal/executor"
+	"github.com/abskrj/velane/services/control-plane/internal/executor/remote"
 )
 
 // mockExecutorServer starts an httptest server that responds with the given

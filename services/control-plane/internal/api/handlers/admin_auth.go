@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/runeforge/control-plane/internal/api/middleware"
-	"github.com/runeforge/control-plane/internal/auth"
-	"github.com/runeforge/control-plane/internal/models"
+	"github.com/abskrj/velane/services/control-plane/internal/api/middleware"
+	"github.com/abskrj/velane/services/control-plane/internal/auth"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
 	"go.uber.org/zap"
 )
 
@@ -178,7 +178,7 @@ func (h *AdminAuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 }
 
 // JWKS handles GET /.well-known/jwks.json.
-// Returns the RS256 public key in JWK Set format so third parties can verify Runeforge JWTs.
+// Returns the RS256 public key in JWK Set format so third parties can verify Velane JWTs.
 func (h *AdminAuthHandler) JWKS(w http.ResponseWriter, r *http.Request) {
 	if h.pubKey == nil {
 		writeError(w, http.StatusNotFound, "JWKS not available — JWT auth not configured")
@@ -204,7 +204,7 @@ func (h *AdminAuthHandler) JWKS(w http.ResponseWriter, r *http.Request) {
 				"kty": "RSA",
 				"use": "sig",
 				"alg": "RS256",
-				"kid": "runeforge-1",
+				"kid": "velane-1",
 				"n":   nB64,
 				"e":   eB64,
 			},

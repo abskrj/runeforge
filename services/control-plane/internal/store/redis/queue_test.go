@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	redisstore "github.com/runeforge/control-plane/internal/store/redis"
+	redisstore "github.com/abskrj/velane/services/control-plane/internal/store/redis"
 )
 
 func newTestClient(t *testing.T) *redisstore.Client {

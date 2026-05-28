@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/runeforge/mcp-server/internal/controlplane"
+	"github.com/abskrj/velane/services/mcp-server/internal/controlplane"
 )
 
 func (r *Registry) addDefaults() {

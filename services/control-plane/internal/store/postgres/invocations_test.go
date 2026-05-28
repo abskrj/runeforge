@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/runeforge/control-plane/internal/models"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
 )
 
 // setupInvocationFixtures creates a tenant, snippet, version, and publishes the

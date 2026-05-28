@@ -1,4 +1,4 @@
-.PHONY: up down build logs seed tidy help
+.PHONY: up down build logs seed tidy copy-platform-libs help
 
 ## tidy: run go mod tidy to generate/update go.sum (required before first build)
 tidy:
@@ -17,8 +17,15 @@ down:
 logs:
 	docker compose logs -f control-plane
 
-## build: compile the control-plane binary locally (requires Go 1.22+)
-build:
+## copy-platform-libs: sync platform-libraries/ into the embedded files directory
+copy-platform-libs:
+	rm -rf services/control-plane/internal/platformlibs/files/bun \
+	       services/control-plane/internal/platformlibs/files/python
+	cp -r platform-libraries/bun  services/control-plane/internal/platformlibs/files/
+	cp -r platform-libraries/python services/control-plane/internal/platformlibs/files/
+
+## build: compile the control-plane binary locally (requires Go 1.22+ and copy-platform-libs)
+build: copy-platform-libs
 	cd services/control-plane && go build ./...
 
 ## seed: create a demo tenant (no auth required — bootstrap endpoint)

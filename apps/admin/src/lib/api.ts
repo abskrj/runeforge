@@ -10,6 +10,10 @@ import type {
   SnippetVersion,
   InvocationResult,
   EmbedToken,
+  Secret,
+  Library,
+  LibraryVersion,
+  PlatformLibrary,
 } from '../types'
 
 const BASE = '/api'
@@ -167,6 +171,49 @@ export const api = {
 
   async publishVersion(snippetId: string, versionNum: number, env: string): Promise<void> {
     return request('POST', `/v1/snippets/${snippetId}/versions/${versionNum}/publish?env=${env}`, undefined, 'apikey')
+  },
+
+  // Libraries
+  async listLibraries(language?: string): Promise<{ platform: PlatformLibrary[]; tenant: Library[] }> {
+    const qs = language ? `?language=${language}` : ''
+    return request('GET', `/v1/libraries${qs}`, undefined, 'apikey')
+  },
+
+  async createLibrary(data: { name: string; slug: string; language: string; description?: string }): Promise<Library> {
+    return request('POST', '/v1/libraries', data, 'apikey')
+  },
+
+  async deleteLibrary(id: string): Promise<void> {
+    return request('DELETE', `/v1/libraries/${id}`, undefined, 'apikey')
+  },
+
+  async listLibraryVersions(libraryId: string): Promise<LibraryVersion[]> {
+    return request('GET', `/v1/libraries/${libraryId}/versions`, undefined, 'apikey')
+  },
+
+  async createLibraryVersion(libraryId: string, code: string): Promise<LibraryVersion> {
+    return request('POST', `/v1/libraries/${libraryId}/versions`, { code }, 'apikey')
+  },
+
+  async publishLibraryVersion(libraryId: string, versionNumber: number): Promise<LibraryVersion> {
+    return request('POST', `/v1/libraries/${libraryId}/versions/${versionNumber}/publish`, undefined, 'apikey')
+  },
+
+  // Variables & Credentials (secrets)
+  async listSecrets(): Promise<Secret[]> {
+    return request('GET', '/v1/secrets', undefined, 'apikey')
+  },
+
+  async createSecret(data: { name: string; value: string; is_secret: boolean; environments?: string[] }): Promise<Secret> {
+    return request('POST', '/v1/secrets', data, 'apikey')
+  },
+
+  async updateSecret(id: string, data: { name?: string; value?: string }): Promise<Secret> {
+    return request('PATCH', `/v1/secrets/${id}`, data, 'apikey')
+  },
+
+  async deleteSecret(id: string): Promise<void> {
+    return request('DELETE', `/v1/secrets/${id}`, undefined, 'apikey')
   },
 
   // Embed tokens

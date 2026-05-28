@@ -23,7 +23,7 @@ export default function SnippetListPage() {
     <div className="min-h-screen bg-gray-50">
       <header className="border-b border-gray-200 bg-white px-6 py-4">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold text-gray-900">Runeforge</h1>
+          <h1 className="text-xl font-bold text-gray-900">Velane</h1>
           <button
             className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
             onClick={() => navigate('/snippets/new')}

@@ -29,7 +29,7 @@ export default function UsagePage() {
               key={w}
               onClick={() => setWindow(w)}
               className={`rounded px-3 py-1 text-sm font-medium transition-colors ${
-                window === w ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-100'
+                window === w ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
               }`}
             >
               {w}

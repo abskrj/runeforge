@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/runeforge/control-plane/internal/models"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
 	"golang.org/x/crypto/bcrypt"
 )
 
 // generateRawKey produces a cryptographically random plain-text API key in the
-// format "rf_<32 hex chars>" and returns the plain key plus an 8-char prefix
+// format "vl_<32 hex chars>" and returns the plain key plus an 8-char prefix
 // derived from the hex portion for efficient DB lookups.
 func generateRawKey() (plain, prefix string, err error) {
 	buf := make([]byte, 16)
@@ -21,7 +21,7 @@ func generateRawKey() (plain, prefix string, err error) {
 		return "", "", fmt.Errorf("rand.Read: %w", err)
 	}
 	hexPart := hex.EncodeToString(buf) // 32 chars
-	plain = "rf_" + hexPart
+	plain = "vl_" + hexPart
 	prefix = hexPart[:8]
 	return plain, prefix, nil
 }
@@ -58,7 +58,7 @@ func (s *Store) CreateAPIKeyWithPlain(ctx context.Context, tenantID, name string
 // ValidateAPIKey accepts a plain-text key, finds the matching row by prefix,
 // verifies the bcrypt hash, updates last_used_at, and returns the key record.
 func (s *Store) ValidateAPIKey(ctx context.Context, plain string) (*models.APIKey, error) {
-	if !strings.HasPrefix(plain, "rf_") || len(plain) < 11 {
+	if !strings.HasPrefix(plain, "vl_") || len(plain) < 11 {
 		return nil, fmt.Errorf("invalid key format")
 	}
 	prefix := plain[3:11]

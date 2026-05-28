@@ -7,7 +7,7 @@ type APIKey struct {
 	ID         string     `json:"id"`
 	TenantID   string     `json:"tenant_id"`
 	KeyHash    string     `json:"-"`         // bcrypt hash — never serialised
-	KeyPrefix  string     `json:"key_prefix"` // first 8 chars after "rf_" prefix
+	KeyPrefix  string     `json:"key_prefix"` // first 8 chars after "vl_" prefix
 	Name       string     `json:"name"`
 	Scopes     []string   `json:"scopes"` // "invoke", "manage", "admin"
 	ExpiresAt  *time.Time `json:"expires_at,omitempty"`

@@ -6,8 +6,9 @@ interface Props {
 }
 
 export default function ProtectedRoute({ children }: Props) {
-  const token = localStorage.getItem('sessionToken')
-  if (!token) {
+  const sessionToken = localStorage.getItem('sessionToken')
+  const apiKey = localStorage.getItem('apiKey')
+  if (!sessionToken && !apiKey) {
     return <Navigate to="/login" replace />
   }
   return <>{children}</>

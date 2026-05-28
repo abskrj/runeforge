@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/runeforge/control-plane/internal/worker"
+	"github.com/abskrj/velane/services/control-plane/internal/worker"
 	"go.uber.org/zap"
 )
 

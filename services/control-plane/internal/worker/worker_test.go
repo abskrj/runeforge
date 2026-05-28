@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/runeforge/control-plane/internal/executor"
-	"github.com/runeforge/control-plane/internal/models"
-	redisstore "github.com/runeforge/control-plane/internal/store/redis"
-	"github.com/runeforge/control-plane/internal/worker"
+	"github.com/abskrj/velane/services/control-plane/internal/executor"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
+	redisstore "github.com/abskrj/velane/services/control-plane/internal/store/redis"
+	"github.com/abskrj/velane/services/control-plane/internal/worker"
 	"go.uber.org/zap"
 )
 

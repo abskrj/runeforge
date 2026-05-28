@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/runeforge/control-plane/internal/models"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
 )
 
 // CreateGitIntegration inserts a new git integration for a snippet.

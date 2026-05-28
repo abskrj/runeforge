@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/runeforge/control-plane/internal/executor"
-	"github.com/runeforge/control-plane/internal/models"
-	"github.com/runeforge/control-plane/internal/scheduler"
-	redisstore "github.com/runeforge/control-plane/internal/store/redis"
+	"github.com/abskrj/velane/services/control-plane/internal/executor"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
+	"github.com/abskrj/velane/services/control-plane/internal/scheduler"
+	redisstore "github.com/abskrj/velane/services/control-plane/internal/store/redis"
 )
 
 // testEncKey is a zeroed 32-byte key used in scheduler unit tests.

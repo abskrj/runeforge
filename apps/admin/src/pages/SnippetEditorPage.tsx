@@ -13,12 +13,12 @@ type ActiveTab = 'test' | 'logs'
 const STARTER_TEMPLATES: Record<string, string> = {
   bun: `export default async function handler(input: Record<string, unknown>) {
   // input is the parsed JSON body sent to /v1/invoke/:tenant/:snippet
-  return { message: "Hello from Runeforge!", input }
+  return { message: "Hello from Velane!", input }
 }
 `,
   python: `def handler(input: dict) -> dict:
     # input is the parsed JSON body sent to /v1/invoke/:tenant/:snippet
-    return {"message": "Hello from Runeforge!", "input": input}
+    return {"message": "Hello from Velane!", "input": input}
 `,
 }
 
@@ -220,7 +220,7 @@ export default function SnippetEditorPage() {
                 key={tab}
                 className={`px-4 py-2 text-sm font-medium capitalize ${
                   activeTab === tab
-                    ? 'border-b-2 border-indigo-600 text-indigo-600'
+                    ? 'border-b-2 border-gray-900 text-gray-900'
                     : 'text-gray-500 hover:text-gray-700'
                 }`}
                 onClick={() => setActiveTab(tab)}
@@ -235,7 +235,7 @@ export default function SnippetEditorPage() {
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-700">Input JSON</label>
                 <textarea
-                  className="h-32 w-full rounded-md border border-gray-300 p-2 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="h-32 w-full rounded-md border border-gray-300 p-2 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-gray-400"
                   value={testInput}
                   onChange={(e) => setTestInput(e.target.value)}
                   spellCheck={false}
@@ -244,7 +244,7 @@ export default function SnippetEditorPage() {
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-700">Environment</label>
                 <select
-                  className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gray-400"
                   value={testEnv}
                   onChange={(e) => setTestEnv(e.target.value as 'dev' | 'staging' | 'prod')}
                 >
@@ -254,7 +254,7 @@ export default function SnippetEditorPage() {
                 </select>
               </div>
               <button
-                className="w-full rounded-md bg-indigo-600 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                className="w-full rounded-md bg-gray-900 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
                 onClick={handleRun}
                 disabled={invoking || !id}
               >
@@ -312,7 +312,7 @@ export default function SnippetEditorPage() {
               key={v.id}
               className={`rounded px-2 py-0.5 text-xs ${
                 selectedVersion?.id === v.id
-                  ? 'bg-indigo-100 font-medium text-indigo-700'
+                  ? 'bg-gray-100 font-medium text-gray-900'
                   : 'text-gray-600 hover:bg-gray-100'
               }`}
               onClick={() => setSelectedVersion(selectedVersion?.id === v.id ? null : v)}

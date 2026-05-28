@@ -78,6 +78,7 @@ class RunRequest(BaseModel):
     timeout_ms: int = 30_000
     max_memory_mb: int = 128
     secret_env_vars: Dict[str, str] = {}
+    libraries: Dict[str, str] = {}
     egress_policy: Optional[EgressPolicy] = None
 
 
@@ -313,6 +314,27 @@ asyncio.run(_main())
 # ---------------------------------------------------------------------------
 
 
+def write_libraries(work_dir: str, libraries: Dict[str, str]) -> None:
+    """Write library modules into work_dir as Python packages.
+
+    importPath format: "namespace.module_name"  (e.g. "runeforge.http_client")
+    Written to:        work_dir/namespace/__init__.py + work_dir/namespace/module_name.py
+    """
+    seen_packages: set[str] = set()
+    for import_path, code in libraries.items():
+        parts = import_path.split(".", 1)
+        if len(parts) != 2:
+            continue
+        namespace, module = parts
+        pkg_dir = Path(work_dir) / namespace
+        pkg_dir.mkdir(exist_ok=True)
+        init_file = pkg_dir / "__init__.py"
+        if namespace not in seen_packages:
+            init_file.write_text("", encoding="utf-8")
+            seen_packages.add(namespace)
+        (pkg_dir / f"{module}.py").write_text(code, encoding="utf-8")
+
+
 async def run_snippet(req: RunRequest) -> RunResult:
     """Write snippet code to a temp dir, run it with a timeout, collect output."""
 
@@ -328,6 +350,7 @@ async def run_snippet(req: RunRequest) -> RunResult:
         snippet_path = Path(work_dir) / "snippet.py"
         harness_path = Path(work_dir) / "harness.py"
 
+        write_libraries(work_dir, req.libraries)
         snippet_path.write_text(req.code, encoding="utf-8")
         harness_path.write_text(
             HARNESS_TEMPLATE.format(snippet_dir=work_dir, blocked_domains=blocked_domains),
@@ -422,6 +445,7 @@ async def run_snippet_stream(req: RunRequest) -> AsyncGenerator[str, None]:
         snippet_path = Path(work_dir) / "snippet.py"
         harness_path = Path(work_dir) / "harness.py"
 
+        write_libraries(work_dir, req.libraries)
         snippet_path.write_text(req.code, encoding="utf-8")
         harness_path.write_text(
             STREAM_HARNESS_TEMPLATE.format(snippet_dir=work_dir, blocked_domains=blocked_domains),

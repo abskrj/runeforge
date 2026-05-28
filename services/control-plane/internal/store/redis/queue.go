@@ -9,7 +9,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-const jobQueueKey = "runeforge:jobs"
+const jobQueueKey = "velane:jobs"
 
 // EgressPolicyJob carries egress policy in an enqueued job.
 type EgressPolicyJob struct {
@@ -31,6 +31,7 @@ type Job struct {
 	CallbackURL   string            `json:"callback_url,omitempty"`
 	Env           string            `json:"env"`
 	SecretEnvVars map[string]string `json:"secret_env_vars,omitempty"`
+	Libraries     map[string]string `json:"libraries,omitempty"`
 	EgressPolicy  *EgressPolicyJob  `json:"egress_policy,omitempty"`
 }
 

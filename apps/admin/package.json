@@ -1,5 +1,5 @@
 {
-  "name": "@runeforge/admin",
+  "name": "@velane/admin",
   "private": true,
   "version": "0.1.0",
   "scripts": {
@@ -8,12 +8,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.6.0",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.395.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
+    "react-markdown": "^10.1.0",
     "react-router-dom": "^6.23.0",
-    "lucide-react": "^0.395.0",
-    "clsx": "^2.1.1",
-    "@monaco-editor/react": "^4.6.0",
+    "remark-gfm": "^4.0.1",
     "tailwind-merge": "^2.3.0"
   },
   "devDependencies": {

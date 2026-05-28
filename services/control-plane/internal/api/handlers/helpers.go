@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/runeforge/control-plane/internal/api/middleware"
+	"github.com/abskrj/velane/services/control-plane/internal/api/middleware"
 )
 
 // writeJSON serialises v as JSON and writes it with the given HTTP status code.

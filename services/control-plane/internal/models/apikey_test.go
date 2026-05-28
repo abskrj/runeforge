@@ -3,7 +3,7 @@ package models_test
 import (
 	"testing"
 
-	"github.com/runeforge/control-plane/internal/models"
+	"github.com/abskrj/velane/services/control-plane/internal/models"
 )
 
 func TestAPIKey_HasScope(t *testing.T) {

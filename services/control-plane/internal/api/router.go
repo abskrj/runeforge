@@ -6,26 +6,27 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
-	"github.com/runeforge/control-plane/internal/api/handlers"
-	"github.com/runeforge/control-plane/internal/api/middleware"
-	"github.com/runeforge/control-plane/internal/audit"
-	"github.com/runeforge/control-plane/internal/auth"
-	"github.com/runeforge/control-plane/internal/scheduler"
-	"github.com/runeforge/control-plane/internal/store/postgres"
+	"github.com/abskrj/velane/services/control-plane/internal/api/handlers"
+	"github.com/abskrj/velane/services/control-plane/internal/api/middleware"
+	"github.com/abskrj/velane/services/control-plane/internal/audit"
+	"github.com/abskrj/velane/services/control-plane/internal/auth"
+	"github.com/abskrj/velane/services/control-plane/internal/platformlibs"
+	"github.com/abskrj/velane/services/control-plane/internal/scheduler"
+	"github.com/abskrj/velane/services/control-plane/internal/store/postgres"
 	"go.uber.org/zap"
 )
 
 // NewRouter builds and returns the fully configured chi router.
-func NewRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider) http.Handler {
-	return newRouter(store, sched, log, encKey, authProvider, nil)
+func NewRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, platLibs []platformlibs.PlatformLib) http.Handler {
+	return newRouter(store, sched, log, encKey, authProvider, nil, platLibs)
 }
 
 // NewRouterWithJWT builds the router and wires the RSA public key for the JWKS endpoint.
-func NewRouterWithJWT(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey) http.Handler {
-	return newRouter(store, sched, log, encKey, authProvider, pubKey)
+func NewRouterWithJWT(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey, platLibs []platformlibs.PlatformLib) http.Handler {
+	return newRouter(store, sched, log, encKey, authProvider, pubKey, platLibs)
 }
 
-func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey) http.Handler {
+func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logger, encKey []byte, authProvider auth.Provider, pubKey *rsa.PublicKey, platLibs []platformlibs.PlatformLib) http.Handler {
 	r := chi.NewRouter()
 
 	// Global middleware.
@@ -48,6 +49,7 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 	metricsH := handlers.NewMetricsHandler(store, log)
 	replayH := handlers.NewReplayHandler(store, sched, log)
 	embedH := handlers.NewEmbedHandler(store, log)
+	librariesH := handlers.NewLibrariesHandler(store, log, platLibs)
 	adminAuthH := handlers.NewAdminAuthHandler(authProvider, store, log)
 	if pubKey != nil {
 		adminAuthH = adminAuthH.WithPublicKey(pubKey)
@@ -69,7 +71,7 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 	// See handler comment for production guidance.
 	r.Post("/v1/tenants", tenantsH.CreateTenant)
 
-	// JWKS — used by third parties to verify Runeforge JWTs (no auth).
+	// JWKS — used by third parties to verify Velane JWTs (no auth).
 	r.Get("/.well-known/jwks.json", adminAuthH.JWKS)
 
 	// Admin auth — no API key required, session-based.
@@ -103,8 +105,9 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 		r.With(middleware.RequireScope("admin", log)).
 			Put("/v1/tenants/{tenantSlug}/egress", tenantsH.UpdateEgressPolicy)
 
-		// Branding — GET is invoke scope (public read), PUT is admin scope.
-		r.Get("/v1/tenants/{tenantSlug}/branding", brandingH.GetBranding)
+		// Branding.
+		r.With(middleware.RequireScope("invoke", log)).
+			Get("/v1/tenants/{tenantSlug}/branding", brandingH.GetBranding)
 		r.With(middleware.RequireScope("admin", log)).
 			Put("/v1/tenants/{tenantSlug}/branding", brandingH.UpdateBranding)
 
@@ -148,10 +151,12 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 		r.With(middleware.RequireScope("manage", log)).
 			Delete("/v1/snippets/{snippetID}/canary", versionsH.ClearCanary)
 
-		// Secrets.
+		// Secrets / Variables.
 		r.Get("/v1/secrets", secretsH.ListSecrets)
 		r.With(middleware.RequireScope("manage", log)).
 			Post("/v1/secrets", secretsH.CreateSecret)
+		r.With(middleware.RequireScope("manage", log)).
+			Patch("/v1/secrets/{secretID}", secretsH.UpdateSecret)
 		r.With(middleware.RequireScope("manage", log)).
 			Delete("/v1/secrets/{secretID}", secretsH.DeleteSecret)
 
@@ -171,6 +176,18 @@ func newRouter(store *postgres.Store, sched *scheduler.Scheduler, log *zap.Logge
 		r.Get("/v1/metrics/snippets/{snippetID}", metricsH.GetSnippetMetrics)
 		r.With(middleware.RequireScope("manage", log)).
 			Post("/v1/invocations/{id}/replay", replayH.ReplayInvocation)
+
+		// Libraries.
+		r.Get("/v1/libraries", librariesH.ListAll)
+		r.With(middleware.RequireScope("manage", log)).
+			Post("/v1/libraries", librariesH.Create)
+		r.With(middleware.RequireScope("manage", log)).
+			Delete("/v1/libraries/{libraryID}", librariesH.Delete)
+		r.Get("/v1/libraries/{libraryID}/versions", librariesH.ListVersions)
+		r.With(middleware.RequireScope("manage", log)).
+			Post("/v1/libraries/{libraryID}/versions", librariesH.CreateVersion)
+		r.With(middleware.RequireScope("manage", log)).
+			Post("/v1/libraries/{libraryID}/versions/{num}/publish", librariesH.PublishVersion)
 
 		// Embed token management.
 		r.With(middleware.RequireScope("manage", log)).

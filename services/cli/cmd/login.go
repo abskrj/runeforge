@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/runeforge/cli/internal/keyring"
+	"github.com/abskrj/velane/services/cli/internal/keyring"
 	"github.com/spf13/cobra"
 )
 
@@ -24,6 +24,6 @@ var loginCmd = &cobra.Command{
 }
 
 func init() {
-	loginCmd.Flags().String("key", "", "API key (rf_xxxx)")
+	loginCmd.Flags().String("key", "", "API key (vl_xxxx)")
 	_ = loginCmd.MarkFlagRequired("key")
 }

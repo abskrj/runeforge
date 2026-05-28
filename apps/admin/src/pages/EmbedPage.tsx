@@ -3,7 +3,7 @@ import { Trash2, Plus, ExternalLink } from 'lucide-react'
 import { api } from '../lib/api'
 import type { EmbedToken, Snippet } from '../types'
 
-const EMBED_BASE = `http://localhost:8091`
+const EMBED_BASE = `http://localhost:8092`
 
 export default function EmbedPage() {
   const [tokens, setTokens] = useState<EmbedToken[]>([])
@@ -96,7 +96,7 @@ export default function EmbedPage() {
               {copied === 'newtoken' ? 'Copied!' : 'Copy token'}
             </button>
             <a
-              href={`${EMBED_BASE}?token=${newToken.token}`}
+              href={`${EMBED_BASE}?embed=true&token=${newToken.token}`}
               target="_blank"
               rel="noopener noreferrer"
               className="flex shrink-0 items-center gap-1 rounded-md border border-green-300 px-3 py-1 text-xs text-green-800 hover:bg-green-100"
@@ -128,8 +128,8 @@ export default function EmbedPage() {
                   onClick={() => toggleSnippet(s.id)}
                   className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
                     selectedSnippets.includes(s.id)
-                      ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                      : 'border-gray-300 text-gray-600 hover:border-indigo-300 hover:text-indigo-600'
+                      ? 'border-gray-400 bg-gray-100 text-gray-900'
+                      : 'border-gray-300 text-gray-600 hover:border-gray-400 hover:text-gray-900'
                   }`}
                 >
                   {s.name}
@@ -145,7 +145,7 @@ export default function EmbedPage() {
             <select
               value={ttl}
               onChange={e => setTtl(Number(e.target.value))}
-              className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+              className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-400 focus:outline-none"
             >
               <option value={3600}>1 hour</option>
               <option value={86400}>24 hours</option>
@@ -158,7 +158,7 @@ export default function EmbedPage() {
         <button
           onClick={handleCreate}
           disabled={creating}
-          className="flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+          className="flex items-center gap-2 rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
         >
           <Plus size={14} />
           {creating ? 'Creating...' : 'Create token'}
