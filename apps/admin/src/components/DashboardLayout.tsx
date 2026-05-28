@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard,
   Key,
@@ -6,6 +6,7 @@ import {
   Paintbrush,
   BarChart2,
   Shield,
+  Code,
   LogOut,
 } from 'lucide-react'
 import clsx from 'clsx'
@@ -13,6 +14,7 @@ import { api } from '../lib/api'
 
 const navItems = [
   { to: '/dashboard/overview', label: 'Overview', icon: LayoutDashboard },
+  { to: '/dashboard/snippets', label: 'Snippets', icon: Code },
   { to: '/dashboard/api-keys', label: 'API Keys', icon: Key },
   { to: '/dashboard/team', label: 'Team', icon: Users },
   { to: '/dashboard/branding', label: 'Branding', icon: Paintbrush },
@@ -22,6 +24,8 @@ const navItems = [
 
 export default function DashboardLayout() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const isEditorRoute = /^\/dashboard\/snippets\/.+/.test(location.pathname)
 
   const handleLogout = async () => {
     try {
@@ -75,7 +79,7 @@ export default function DashboardLayout() {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-auto p-8">
+      <main className={clsx('flex-1 overflow-auto', isEditorRoute ? 'flex flex-col p-0' : 'p-8')}>
         <Outlet />
       </main>
     </div>

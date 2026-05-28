@@ -66,3 +66,33 @@ export interface EgressPolicy {
   blocked_cidrs: string[]
   blocked_domains: string[]
 }
+
+export interface Snippet {
+  id: string
+  name: string
+  slug: string
+  language: string
+  description: string
+  created_at: string
+}
+
+export interface SnippetVersion {
+  id: string
+  snippet_id: string
+  version_number: number
+  code: string
+  status: 'draft' | 'published' | 'archived'
+  created_at: string
+}
+
+export interface SnippetEnvironment {
+  env: string
+  active_version_number: number | null
+}
+
+export interface InvocationResult {
+  output: string
+  error: string
+  duration_ms: number
+  exit_code: number
+}

@@ -12,7 +12,9 @@
     "react-dom": "^18.3.0",
     "react-router-dom": "^6.23.0",
     "lucide-react": "^0.395.0",
-    "clsx": "^2.1.1"
+    "clsx": "^2.1.1",
+    "@monaco-editor/react": "^4.6.0",
+    "tailwind-merge": "^2.3.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.0",

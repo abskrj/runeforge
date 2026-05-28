@@ -6,6 +6,9 @@ import type {
   UsageSummary,
   APIKey,
   EgressPolicy,
+  Snippet,
+  SnippetVersion,
+  InvocationResult,
 } from '../types'
 
 const BASE = '/api'
@@ -123,5 +126,46 @@ export const api = {
 
   async updateEgressPolicy(p: EgressPolicy): Promise<EgressPolicy> {
     return request('PUT', `/v1/tenants/${getSlug()}/egress`, p, 'apikey')
+  },
+
+  // Snippets
+  async listSnippets(): Promise<Snippet[]> {
+    return request('GET', `/v1/snippets`, undefined, 'apikey')
+  },
+
+  async getSnippet(id: string): Promise<Snippet> {
+    return request('GET', `/v1/snippets/${id}`, undefined, 'apikey')
+  },
+
+  async createSnippet(data: { name: string; language: string; description?: string }): Promise<Snippet> {
+    const slug = data.name.toLowerCase().replace(/\s+/g, '-')
+    return request('POST', `/v1/snippets`, { ...data, slug }, 'apikey')
+  },
+
+  async updateSnippet(id: string, data: Partial<{ name: string; description: string }>): Promise<Snippet> {
+    return request('PATCH', `/v1/snippets/${id}`, data, 'apikey')
+  },
+
+  async deleteSnippet(id: string): Promise<void> {
+    return request('DELETE', `/v1/snippets/${id}`, undefined, 'apikey')
+  },
+
+  // Versions
+  async listVersions(snippetId: string): Promise<SnippetVersion[]> {
+    return request('GET', `/v1/snippets/${snippetId}/versions`, undefined, 'apikey')
+  },
+
+  async createVersion(snippetId: string, code: string): Promise<SnippetVersion> {
+    return request('POST', `/v1/snippets/${snippetId}/versions`, { code }, 'apikey')
+  },
+
+  async publishVersion(snippetId: string, versionNum: number, env: string): Promise<void> {
+    return request('POST', `/v1/snippets/${snippetId}/versions/${versionNum}/publish?env=${env}`, undefined, 'apikey')
+  },
+
+  // Invocation
+  async invokeSnippet(snippetId: string, input: string, env = 'dev'): Promise<InvocationResult> {
+    const slug = getSlug()
+    return request('POST', `/v1/invoke/${slug}/${snippetId}?env=${env}`, JSON.parse(input || '{}'), 'apikey')
   },
 }

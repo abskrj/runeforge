@@ -126,6 +126,20 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  admin:
+    build:
+      context: ./apps/admin
+    ports:
+      - "8092:80"
+    depends_on:
+      control-plane:
+        condition: service_started
+    restart: unless-stopped
+
+  # NOTE: apps/web-ide has been retired. Its functionality (snippet editor) has been
+  # merged into apps/admin. The directory is kept for git history but is not built
+  # or served from docker-compose.
+
 volumes:
   postgres_data:
   minio_data:

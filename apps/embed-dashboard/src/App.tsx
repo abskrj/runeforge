@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import MonacoEditor from '@monaco-editor/react'
 
 type Snippet = {
   id: string
@@ -124,7 +125,19 @@ export default function App() {
               </div>
               <section className="card">
                 <h3 style={{ marginTop: 0 }}>Latest Code</h3>
-                <pre>{(detail.versions ?? [])[detail.versions.length - 1]?.code ?? '// no code available'}</pre>
+                <MonacoEditor
+                  height="300px"
+                  language={selected?.language === 'bun' ? 'typescript' : 'python'}
+                  value={(detail.versions ?? [])[detail.versions.length - 1]?.code ?? ''}
+                  options={{
+                    readOnly: true,
+                    minimap: { enabled: false },
+                    scrollBeyondLastLine: false,
+                    fontSize: 13,
+                    lineNumbers: 'on',
+                    theme: 'vs-dark',
+                  }}
+                />
               </section>
               <div className="grid-2">
                 <section className="card">

@@ -5,6 +5,7 @@ interface Stats {
   apiKeyCount: number
   memberCount: number
   invocations24h: number
+  snippetCount: number
   loading: boolean
   error: string
 }
@@ -15,6 +16,7 @@ export default function OverviewPage() {
     apiKeyCount: 0,
     memberCount: 0,
     invocations24h: 0,
+    snippetCount: 0,
     loading: true,
     error: '',
   })
@@ -22,16 +24,18 @@ export default function OverviewPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [keys, members, usage] = await Promise.allSettled([
+        const [keys, members, usage, snippets] = await Promise.allSettled([
           api.listAPIKeys(),
           api.listMembers(),
           api.getUsage('24h'),
+          api.listSnippets(),
         ])
         setStats({
           apiKeyCount: keys.status === 'fulfilled' ? keys.value.length : 0,
           memberCount: members.status === 'fulfilled' ? members.value.length : 0,
           invocations24h:
             usage.status === 'fulfilled' ? usage.value.total_invocations : 0,
+          snippetCount: snippets.status === 'fulfilled' ? snippets.value.length : 0,
           loading: false,
           error: '',
         })
@@ -51,7 +55,8 @@ export default function OverviewPage() {
         <div className="mb-6 rounded-md bg-red-50 p-3 text-sm text-red-700">{stats.error}</div>
       )}
 
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-4">
+        <StatCard label="Snippets" value={stats.loading ? '...' : String(stats.snippetCount)} />
         <StatCard label="API Keys" value={stats.loading ? '...' : String(stats.apiKeyCount)} />
         <StatCard label="Team Members" value={stats.loading ? '...' : String(stats.memberCount)} />
         <StatCard label="Invocations (24h)" value={stats.loading ? '...' : String(stats.invocations24h)} />
