@@ -15,7 +15,7 @@ import (
 type APIKeysStore interface {
 	GetTenantBySlug(ctx context.Context, slug string) (*models.Tenant, error)
 	ListAPIKeys(ctx context.Context, tenantID string) ([]*models.APIKey, error)
-	DeleteAPIKey(ctx context.Context, id string) error
+	DeleteAPIKey(ctx context.Context, tenantID, id string) error
 }
 
 // APIKeysHandler handles API key list and revoke endpoints.
@@ -89,9 +89,9 @@ func (h *APIKeysHandler) DeleteAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.store.DeleteAPIKey(r.Context(), keyID); err != nil {
+	if err := h.store.DeleteAPIKey(r.Context(), tenant.ID, keyID); err != nil {
 		h.log.Error("delete api key failed", zap.Error(err))
-		writeError(w, http.StatusInternalServerError, "failed to delete api key")
+		writeError(w, http.StatusNotFound, "api key not found")
 		return
 	}
 

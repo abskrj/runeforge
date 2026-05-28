@@ -266,6 +266,13 @@ func (h *VersionsHandler) SetCanary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Verify the requested canary version belongs to this snippet.
+	canaryVer, err := h.store.GetVersion(r.Context(), req.VersionID)
+	if err != nil || canaryVer.SnippetID != snippetID {
+		writeError(w, http.StatusNotFound, "version not found")
+		return
+	}
+
 	env := r.URL.Query().Get("env")
 	if env == "" {
 		env = "prod"

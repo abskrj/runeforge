@@ -39,6 +39,13 @@ func (h *GitIntegrationHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	snippetID := chi.URLParam(r, "snippetID")
 
+	// Verify the snippet exists and belongs to this tenant before creating.
+	snippet, err := h.store.GetSnippetByID(r.Context(), snippetID)
+	if err != nil || snippet.TenantID != tenant.ID {
+		writeError(w, http.StatusNotFound, "snippet not found")
+		return
+	}
+
 	var req createGitIntegrationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")

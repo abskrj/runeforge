@@ -68,7 +68,7 @@ export const api = {
     email: string,
     password: string,
     inviteToken?: string,
-  ): Promise<{ user: User; session_token: string }> {
+  ): Promise<{ user: User; session_token: string; tenant_slug: string }> {
     return request('POST', '/v1/admin/auth/register', { email, password, invite_token: inviteToken }, 'none')
   },
 

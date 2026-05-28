@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/runeforge/control-plane/internal/api/middleware"
 	"github.com/runeforge/control-plane/internal/auth"
@@ -89,6 +90,10 @@ func (h *AdminAuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invite token already used")
 			return
 		}
+		if invite.ExpiresAt.Before(time.Now()) {
+			writeError(w, http.StatusBadRequest, "invite token expired")
+			return
+		}
 		if err := h.store.AcceptInvite(r.Context(), invite.ID); err != nil {
 			h.log.Error("accept invite failed", zap.Error(err))
 			writeError(w, http.StatusInternalServerError, "failed to accept invite")
@@ -109,10 +114,13 @@ func (h *AdminAuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tenantSlug, _ := h.store.GetUserPrimaryTenantSlug(r.Context(), sess.UserID)
+
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"user":          user,
 		"session_token": sess.Token,
 		"expires_at":    sess.ExpiresAt,
+		"tenant_slug":   tenantSlug,
 	})
 }
 

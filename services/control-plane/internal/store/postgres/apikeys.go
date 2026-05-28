@@ -145,10 +145,20 @@ func (s *Store) ListAPIKeys(ctx context.Context, tenantID string) ([]*models.API
 	return keys, rows.Err()
 }
 
-// DeleteAPIKey removes an API key by its primary key.
-func (s *Store) DeleteAPIKey(ctx context.Context, id string) error {
-	_, err := s.pool.Exec(ctx, `DELETE FROM api_keys WHERE id = $1`, id)
-	return err
+// DeleteAPIKey removes an API key by primary key, scoped to the owning tenant.
+// Returns an error if the key does not exist or belongs to a different tenant.
+func (s *Store) DeleteAPIKey(ctx context.Context, tenantID, id string) error {
+	result, err := s.pool.Exec(ctx,
+		`DELETE FROM api_keys WHERE id = $1 AND tenant_id = $2`,
+		id, tenantID,
+	)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("api key not found")
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
