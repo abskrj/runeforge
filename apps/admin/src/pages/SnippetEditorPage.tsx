@@ -10,6 +10,18 @@ import type { InvocationResult, Snippet, SnippetVersion } from '../types'
 
 type ActiveTab = 'test' | 'logs'
 
+const STARTER_TEMPLATES: Record<string, string> = {
+  bun: `export default async function handler(input: Record<string, unknown>) {
+  // input is the parsed JSON body sent to /v1/invoke/:tenant/:snippet
+  return { message: "Hello from Runeforge!", input }
+}
+`,
+  python: `def handler(input: dict) -> dict:
+    # input is the parsed JSON body sent to /v1/invoke/:tenant/:snippet
+    return {"message": "Hello from Runeforge!", "input": input}
+`,
+}
+
 export default function SnippetEditorPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -38,6 +50,8 @@ export default function SnippetEditorPage() {
         setVersions(vs)
         if (vs.length > 0) {
           setCode(vs[vs.length - 1].code)
+        } else {
+          setCode(STARTER_TEMPLATES[sn.language] ?? STARTER_TEMPLATES.bun)
         }
       } catch (err) {
         showToast(String(err), 'error')
