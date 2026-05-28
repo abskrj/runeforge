@@ -91,7 +91,7 @@ export interface SnippetEnvironment {
 }
 
 export interface InvocationResult {
-  output: string
+  output: unknown
   error: string
   stderr: string
   duration_ms: number

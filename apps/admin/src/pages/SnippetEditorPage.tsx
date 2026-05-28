@@ -280,7 +280,7 @@ export default function SnippetEditorPage() {
                     >
                       {invokeResult.error
                         ? `Error: ${invokeResult.error}\n${invokeResult.stderr || ''}`.trim()
-                        : JSON.stringify(JSON.parse(invokeResult.output || '{}'), null, 2)}
+                        : JSON.stringify(invokeResult.output, null, 2)}
                     </pre>
                   )}
                 </div>
